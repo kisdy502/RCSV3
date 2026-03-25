@@ -38,7 +38,7 @@ spring:
           url: "jdbc:mysql://127.0.0.1:3306/db_rcs?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior 
           =convertToNull&useSSL=true&serverTimezone=GMT%2B8&autoReconnect=true&rewriteBatchedStatements=true"
           username: root
-          password: jizhi.406
+          password: 123456
         # 从库数据源
         slave:
           lazy: true
