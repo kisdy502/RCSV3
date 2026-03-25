@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.jizhi</groupId>
+    <artifactId>jz-bom</artifactId>
+    <version>${revision}</version>
+    <packaging>pom</packaging>
+    <name>jz-bom</name>
+    <description>jz-bom，JzModules模块下的子模块清单</description>
+
+    <properties>
+        <revision>2.0.2</revision>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!--BASE模块-->
+            <dependency>
+                <groupId>com.jizhi</groupId>
+                <artifactId>jz-base-common</artifactId>
+                <version>${revision}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.jizhi</groupId>
+                <artifactId>jz-lib-modbus</artifactId>
+                <version>${revision}</version>
+            </dependency>
+
+
+            <dependency>
+                <groupId>com.jizhi</groupId>
+                <artifactId>jz-lib-vda5050</artifactId>
+                <version>${revision}</version>
+            </dependency>
+
+        </dependencies>
+    </dependencyManagement>
+
+</project>

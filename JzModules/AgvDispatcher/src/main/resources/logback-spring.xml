@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- 彩色日志格式 -->
+    <property name="CONSOLE_LOG_PATTERN"
+              value="%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}"/>
+
+    <!-- 优先定义LOG_PATH和LOG_NAME -->
+    <springProperty scope="context" name="LOG_PATH" source="logging.file.path" defaultValue="./external/logs"/>
+    <springProperty scope="context" name="LOG_NAME" source="logging.file.name" defaultValue="application-dispatch"/>
+
+    <!-- 控制台输出 -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${CONSOLE_LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 文件输出 -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/${LOG_NAME}.log</file> <!-- 动态路径 -->
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/${LOG_NAME}-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>      <!-- 单个文件最大 -->
+            <maxHistory>7</maxHistory>            <!-- 保留天数 -->
+            <totalSizeCap>100MB</totalSizeCap>    <!-- 总大小限制 -->
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 异步Appender配置 -->
+    <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>1024</queueSize>  <!-- 队列容量需根据日志量调整 -->
+        <discardingThreshold>0</discardingThreshold>  <!-- 队列满时丢弃DEBUG日志 -->
+        <includeCallerData>false</includeCallerData>  <!-- 禁用调用者信息提升性能 -->
+        <appender-ref ref="FILE"/>  <!-- 关联同步输出的目标Appender -->
+    </appender>
+
+
+    <!-- 日志级别映射颜色 -->
+    <conversionRule conversionWord="clr" converterClass="org.springframework.boot.logging.logback.ColorConverter"/>
+    <conversionRule conversionWord="wex"
+                    converterClass="org.springframework.boot.logging.logback.WhitespaceThrowableProxyConverter"/>
+    <conversionRule conversionWord="wEx"
+                    converterClass="org.springframework.boot.logging.logback.ExtendedWhitespaceThrowableProxyConverter"/>
+
+    <!-- 自定义级别颜色 -->
+    <property name="LOG_LEVEL_COLOR" value="%clr(%5p){
+        TRACE=blue,
+        DEBUG=cyan,
+        INFO=green,
+        WARN=yellow,
+        ERROR=red,
+        FATAL=magenta
+    }"/>
+
+    <!-- 根日志配置 -->
+    <root level="DEBUG">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </root>
+</configuration>

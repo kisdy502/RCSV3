@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AGV路径规划可视化系统(后端接口已经注释了，不用了)</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: flex;
+            min-height: 600px;
+        }
+
+        .sidebar {
+            width: 350px;
+            background: #f8f9fa;
+            border-right: 1px solid #e9ecef;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .map-container {
+            flex: 1;
+            padding: 20px;
+            background: #f5f7fa;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        }
+
+        .panel h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e9ecef;
+            font-size: 1.4rem;
+        }
+
+        .task-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .task-item {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .task-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            border-color: #667eea;
+        }
+
+        .task-item.active {
+            background: #e3f2fd;
+            border-color: #2196f3;
+        }
+
+        .task-id {
+            font-weight: bold;
+            color: #333;
+            font-size: 1rem;
+        }
+
+        .task-info {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+
+        .status-assigned { background: #ffeb3b; color: #333; }
+        .status-executing { background: #4caf50; color: white; }
+        .status-completed { background: #9e9e9e; color: white; }
+
+        #mapCanvas {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            display: block;
+            margin: 0 auto;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            background: #5a67d8;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        button.secondary {
+            background: #6c757d;
+        }
+
+        button.secondary:hover {
+            background: #5a6268;
+        }
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+        }
+
+        .color-start { background: #4caf50; }  /* 绿色 */
+        .color-end { background: #f44336; }    /* 红色 */
+        .color-path { background: #2196f3; }   /* 蓝色 */
+        .color-obstacle { background: #795548; } /* 棕色 */
+
+        .task-details {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+
+        .detail-item {
+            margin-bottom: 8px;
+            display: flex;
+        }
+
+        .detail-label {
+            font-weight: bold;
+            min-width: 120px;
+            color: #555;
+        }
+
+        .detail-value {
+            color: #333;
+        }
+
+        .refresh-info {
+            text-align: center;
+            color: #666;
+            font-size: 0.9rem;
+            margin-top: 10px;
+        }
+
+        @media (max-width: 1200px) {
+            .main-content {
+                flex-direction: column;
+            }
+
+            .sidebar {
+                width: 100%;
+                border-right: none;
+                border-bottom: 1px solid #e9ecef;
+            }
+
+            #mapCanvas {
+                width: 100% !important;
+                height: auto !important;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>🤖 AGV路径规划可视化系统</h1>
+        <div class="subtitle">实时监控多机器人任务调度与路径规划</div>
+    </div>
+
+    <div class="main-content">
+        <!-- 左侧任务列表 -->
+        <div class="sidebar">
+            <div class="panel">
+                <h2>📋 任务控制面板</h2>
+                <div class="controls">
+                    <button id="refreshBtn">🔄 刷新任务</button>
+                    <button id="autoRefreshBtn" class="secondary">⏸️ 暂停自动刷新</button>
+                    <button id="clearBtn" class="secondary">🗑️ 清除选择</button>
+                </div>
+                <div class="refresh-info">
+                    最后更新: <span id="lastUpdate">-</span>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>🚀 活动任务 ( <span id="activeCount">0</span> )</h2>
+                <div class="task-list" id="activeTasks">
+                    <!-- 动态填充任务列表 -->
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>⏳ 等待队列 ( <span id="queueCount">0</span> )</h2>
+                <div class="task-list" id="queuedTasks">
+                    <!-- 动态填充队列列表 -->
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>📊 任务详情</h2>
+                <div id="taskDetails">
+                    <div style="color: #666; text-align: center; padding: 20px;">
+                        点击左侧任务查看详情
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧地图区域 -->
+        <div class="map-container">
+            <div class="controls">
+                <button id="zoomInBtn">🔍 放大</button>
+                <button id="zoomOutBtn">🔍 缩小</button>
+                <button id="resetViewBtn">🗺️ 重置视图</button>
+                <button id="showObstaclesBtn" class="secondary">🧱 显示障碍物</button>
+            </div>
+
+            <canvas id="mapCanvas"></canvas>
+
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color color-start"></div>
+                    <span>起点</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color color-end"></div>
+                    <span>终点</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color color-path"></div>
+                    <span>规划路径</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color color-obstacle"></div>
+                    <span>障碍物</span>
+                </div>
+                <div class="legend-item">
+                    <div style="width: 20px; height: 20px; border: 2px solid #333; border-radius: 50%; background: rgba(255, 255, 255, 0.5);"></div>
+                    <span>AGV位置</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 全局变量
+    let currentTaskId = null;
+    let autoRefresh = true;
+    let autoRefreshInterval = 3000; // 3秒自动刷新
+    let panOffset = { x: 0, y: 0 };
+    let isDragging = false;
+    let lastMousePos = { x: 0, y: 0 };
+    let showObstacles = true;
+
+    // DOM元素
+    const canvas = document.getElementById('mapCanvas');
+    const ctx = canvas.getContext('2d');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const autoRefreshBtn = document.getElementById('autoRefreshBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const zoomInBtn = document.getElementById('zoomInBtn');
+    const zoomOutBtn = document.getElementById('zoomOutBtn');
+    const resetViewBtn = document.getElementById('resetViewBtn');
+    const showObstaclesBtn = document.getElementById('showObstaclesBtn');
+
+    // 初始化画布
+    function initCanvas() {
+        canvas.width = 800;
+        canvas.height = 600;
+
+        // 设置画布事件监听
+        canvas.addEventListener('wheel', handleWheel);
+        canvas.addEventListener('mousedown', handleMouseDown);
+        canvas.addEventListener('mousemove', handleMouseMove);
+        canvas.addEventListener('mouseup', handleMouseUp);
+    }
+
+    // 鼠标滚轮缩放
+    function handleWheel(event) {
+        event.preventDefault();
+        const zoomFactor = 0.1;
+        const mouseX = event.offsetX;
+        const mouseY = event.offsetY;
+
+        const worldX = (mouseX - panOffset.x) / scale;
+        const worldY = (mouseY - panOffset.y) / scale;
+
+        if (event.deltaY < 0) {
+            // 放大
+            scale *= 1 + zoomFactor;
+        } else {
+            // 缩小
+            scale *= 1 - zoomFactor;
+        }
+
+        // 限制缩放范围
+        scale = Math.max(0.1, Math.min(5, scale));
+
+        // 调整平移偏移，使鼠标点保持在原位
+        panOffset.x = mouseX - worldX * scale;
+        panOffset.y = mouseY - worldY * scale;
+
+        drawMap();
+    }
+
+    // 鼠标拖动平移
+    function handleMouseDown(event) {
+        isDragging = true;
+        lastMousePos = { x: event.offsetX, y: event.offsetY };
+    }
+
+    function handleMouseMove(event) {
+        if (isDragging) {
+            const dx = event.offsetX - lastMousePos.x;
+            const dy = event.offsetY - lastMousePos.y;
+
+            panOffset.x += dx;
+            panOffset.y += dy;
+
+            lastMousePos = { x: event.offsetX, y: event.offsetY };
+            drawMap();
+        }
+    }
+
+    function handleMouseUp() {
+        isDragging = false;
+    }
+
+    // 获取所有任务
+    async function fetchTasks() {
+        try {
+            const response = await fetch('/api/visualization/tasks');
+            if (!response.ok) throw new Error('网络响应异常');
+            return await response.json();
+        } catch (error) {
+            console.error('获取任务失败:', error);
+            showError('无法获取任务数据，请检查服务器连接');
+            return null;
+        }
+    }
+
+    // 获取任务详情
+    async function fetchTaskDetail(taskId) {
+        try {
+            const response = await fetch(`/api/visualization/tasks/${taskId}`);
+            if (!response.ok) throw new Error('网络响应异常');
+            return await response.json();
+        } catch (error) {
+            console.error('获取任务详情失败:', error);
+            return null;
+        }
+    }
+
+    // 获取地图信息
+    async function fetchMapInfo() {
+        try {
+            const response = await fetch('/api/visualization/map');
+            if (!response.ok) throw new Error('网络响应异常');
+            return await response.json();
+        } catch (error) {
+            console.error('获取地图信息失败:', error);
+            return null;
+        }
+    }
+
+    // 显示错误信息
+    function showError(message) {
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: #f44336;
+                color: white;
+                padding: 15px;
+                border-radius: 5px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                z-index: 1000;
+            `;
+        errorDiv.textContent = message;
+        document.body.appendChild(errorDiv);
+
+        setTimeout(() => errorDiv.remove(), 5000);
+    }
+
+    // 更新任务列表显示
+    function updateTaskList(tasksData) {
+        if (!tasksData) return;
+
+        // 更新活动任务
+        const activeTasksDiv = document.getElementById('activeTasks');
+        const queuedTasksDiv = document.getElementById('queuedTasks');
+        const activeCount = document.getElementById('activeCount');
+        const queueCount = document.getElementById('queueCount');
+
+        activeTasksDiv.innerHTML = '';
+        queuedTasksDiv.innerHTML = '';
+
+        // 活动任务
+        const activeTasks = tasksData.activeTasks || [];
+        activeCount.textContent = activeTasks.length;
+
+        activeTasks.forEach(task => {
+            const taskDiv = document.createElement('div');
+            taskDiv.className = `task-item ${task.taskId === currentTaskId ? 'active' : ''}`;
+            taskDiv.innerHTML = `
+                    <div class="task-id">${task.agvId} - ${task.taskId.substring(0, 8)}...</div>
+                    <div class="task-info">
+                        <span>状态: <span class="status-badge status-${task.status.toLowerCase()}">${task.status}</span></span>
+                        <span>路径点: ${task.pathLength || 0}</span>
+                    </div>
+                `;
+            taskDiv.addEventListener('click', () => selectTask(task.taskId));
+            activeTasksDiv.appendChild(taskDiv);
+        });
+
+        // 队列任务
+        const queuedTasks = tasksData.queuedTasks || [];
+        queueCount.textContent = queuedTasks.length;
+
+        queuedTasks.forEach(request => {
+            const taskDiv = document.createElement('div');
+            taskDiv.className = 'task-item';
+            taskDiv.innerHTML = `
+                    <div class="task-id">${request.requestId}</div>
+                    <div class="task-info">
+                        <span>起点: (${request.from.x}, ${request.from.y})</span>
+                        <span>终点: (${request.to.x}, ${request.to.y})</span>
+                    </div>
+                    <div style="margin-top: 5px; color: #ff9800;">
+                        ⏳ 等待调度 (优先级: ${request.priority})
+                    </div>
+                `;
+            queuedTasksDiv.appendChild(taskDiv);
+        });
+
+        // 更新时间
+        const lastUpdate = document.getElementById('lastUpdate');
+        lastUpdate.textContent = new Date().toLocaleTimeString();
+    }
+
+    // 选择任务
+    async function selectTask(taskId) {
+        currentTaskId = taskId;
+
+        // 更新任务列表选中状态
+        document.querySelectorAll('.task-item').forEach(item => {
+            item.classList.remove('active');
+        });
+
+        // 获取并显示任务详情
+        const taskDetail = await fetchTaskDetail(taskId);
+        if (taskDetail) {
+            displayTaskDetails(taskDetail);
+            drawMapWithTask(taskDetail);
+        }
+
+        // 滚动到对应任务项
+        const selectedTask = document.querySelector(`.task-item[data-task-id="${taskId}"]`);
+        if (selectedTask) {
+            selectedTask.classList.add('active');
+            selectedTask.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
+    // 显示任务详情
+    function displayTaskDetails(task) {
+        const detailsDiv = document.getElementById('taskDetails');
+
+        if (!task || task.error) {
+            detailsDiv.innerHTML = `
+                    <div style="color: #f44336; text-align: center; padding: 20px;">
+                        ${task?.error || '任务详情不可用'}
+                    </div>
+                `;
+            return;
+        }
+
+        const duration = task.estimatedDuration ? `${task.estimatedDuration}秒` : '未计算';
+
+        detailsDiv.innerHTML = `
+                <div class="detail-item">
+                    <div class="detail-label">任务ID:</div>
+                    <div class="detail-value">${task.taskId}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">AGV编号:</div>
+                    <div class="detail-value">${task.agvId}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">请求ID:</div>
+                    <div class="detail-value">${task.requestId}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">状态:</div>
+                    <div class="detail-value">
+                        <span class="status-badge status-${task.status.toLowerCase()}">
+                            ${task.status}
+                        </span>
+                    </div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">起点:</div>
+                    <div class="detail-value">(${task.start.x}, ${task.start.y})</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">终点:</div>
+                    <div class="detail-value">(${task.end.x}, ${task.end.y})</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">路径长度:</div>
+                    <div class="detail-value">${task.pathLength} 个节点</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">预计耗时:</div>
+                    <div class="detail-value">${duration}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">创建时间:</div>
+                    <div class="detail-value">${new Date(task.createdAt).toLocaleString()}</div>
+                </div>
+                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
+                    <div style="font-weight: bold; margin-bottom: 8px;">路径预览:</div>
+                    <div style="font-size: 0.9rem; color: #666;">
+                        从 (${task.start.x}, ${task.start.y})
+                        到 (${task.end.x}, ${task.end.y})，
+                        共 ${task.pathLength} 步
+                    </div>
+                </div>
+            `;
+    }
+
+    // 绘制地图和任务路径
+    async function drawMapWithTask(taskData) {
+        // 获取地图信息
+        const mapInfo = await fetchMapInfo();
+
+        drawMap(taskData, mapInfo);
+    }
+
+    // 绘制地图
+    function drawMap(taskData = null, mapInfo = null) {
+        // 清除画布
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 保存当前状态
+        ctx.save();
+
+        // 应用缩放和平移
+        ctx.translate(panOffset.x, panOffset.y);
+        ctx.scale(scale, scale);
+
+        // 绘制网格背景
+        drawGrid();
+
+        // 绘制障碍物
+        if (showObstacles && mapInfo && mapInfo.obstacles) {
+            drawObstacles(mapInfo.obstacles);
+        }
+
+        // 绘制任务路径
+        if (taskData && taskData.path) {
+            drawPath(taskData.path, taskData.start, taskData.end, taskData.agvId);
+        }
+
+        // 恢复状态
+        ctx.restore();
+    }
+
+    // 绘制网格
+    function drawGrid() {
+        const gridSize = 10;
+        const width = 100;  // 地图宽度
+        const height = 100; // 地图高度
+
+        ctx.strokeStyle = '#e0e0e0';
+        ctx.lineWidth = 0.5;
+
+        // 垂直线
+        for (let x = 0; x <= width; x += gridSize) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, height);
+            ctx.stroke();
+        }
+
+        // 水平线
+        for (let y = 0; y <= height; y += gridSize) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(width, y);
+            ctx.stroke();
+        }
+
+        // 坐标轴
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(width, 0);
+        ctx.lineTo(width, height);
+        ctx.lineTo(0, height);
+        ctx.lineTo(0, 0);
+        ctx.stroke();
+
+        // 坐标标签
+        ctx.fillStyle = '#333';
+        ctx.font = '8px Arial';
+        for (let x = 0; x <= width; x += 20) {
+            ctx.fillText(x.toString(), x - 5, -2);
+            ctx.fillText(x.toString(), x - 5, height + 10);
+        }
+        for (let y = 0; y <= height; y += 20) {
+            ctx.fillText(y.toString(), -15, y + 3);
+            ctx.fillText(y.toString(), width + 5, y + 3);
+        }
+    }
+
+    // 绘制障碍物
+    function drawObstacles(obstacles) {
+        ctx.fillStyle = 'rgba(121, 85, 72, 0.7)';
+        ctx.strokeStyle = '#5d4037';
+        ctx.lineWidth = 0.5;
+
+        obstacles.forEach(obstacle => {
+            const x = obstacle.x;
+            const y = obstacle.y;
+
+            ctx.beginPath();
+            ctx.rect(x, y, 1, 1);
+            ctx.fill();
+            ctx.stroke();
+        });
+    }
+
+    // 绘制路径
+    function drawPath(path, start, end, agvId) {
+        if (!path || path.length < 2) return;
+
+        // 绘制路径线
+        ctx.strokeStyle = '#2196f3';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        ctx.beginPath();
+        ctx.moveTo(path[0].x + 0.5, path[0].y + 0.5);
+
+        for (let i = 1; i < path.length; i++) {
+            ctx.lineTo(path[i].x + 0.5, path[i].y + 0.5);
+        }
+
+        ctx.stroke();
+
+        // 绘制路径点
+        ctx.fillStyle = '#1976d2';
+        path.forEach((point, index) => {
+            // 只绘制部分点，避免过于密集
+            if (index % 5 === 0 || index === path.length - 1) {
+                ctx.beginPath();
+                ctx.arc(point.x + 0.5, point.y + 0.5, 0.3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
+
+        // 绘制起点
+        ctx.fillStyle = '#4caf50';
+        ctx.beginPath();
+        ctx.arc(start.x + 0.5, start.y + 0.5, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#2e7d32';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // 绘制终点
+        ctx.fillStyle = '#f44336';
+        ctx.beginPath();
+        ctx.arc(end.x + 0.5, end.y + 0.5, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#c62828';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // 绘制AGV位置（假设在起点）
+        ctx.fillStyle = '#ff9800';
+        ctx.beginPath();
+        ctx.arc(start.x + 0.5, start.y + 0.5, 0.8, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 添加AGV标签
+        ctx.fillStyle = '#333';
+        ctx.font = 'bold 10px Arial';
+        ctx.fillText(agvId, start.x + 2, start.y - 2);
+
+        // 绘制起点终点标签
+        ctx.fillStyle = '#4caf50';
+        ctx.font = 'bold 9px Arial';
+        ctx.fillText('起点', start.x + 2, start.y + 3);
+
+        ctx.fillStyle = '#f44336';
+        ctx.fillText('终点', end.x + 2, end.y + 3);
+    }
+
+    // 自动刷新任务列表
+    let refreshInterval;
+
+    function startAutoRefresh() {
+        if (refreshInterval) clearInterval(refreshInterval);
+
+        refreshInterval = setInterval(async () => {
+            if (autoRefresh) {
+                const tasksData = await fetchTasks();
+                if (tasksData) {
+                    updateTaskList(tasksData);
+
+                    // 如果当前有选中的任务，更新其详情
+                    if (currentTaskId) {
+                        const taskDetail = await fetchTaskDetail(currentTaskId);
+                        if (taskDetail && !taskDetail.error) {
+                            displayTaskDetails(taskDetail);
+                            drawMapWithTask(taskDetail);
+                        }
+                    }
+                }
+            }
+        }, autoRefreshInterval);
+    }
+
+    // 事件监听
+    refreshBtn.addEventListener('click', async () => {
+        const tasksData = await fetchTasks();
+        if (tasksData) {
+            updateTaskList(tasksData);
+        }
+    });
+
+    autoRefreshBtn.addEventListener('click', () => {
+        autoRefresh = !autoRefresh;
+        autoRefreshBtn.textContent = autoRefresh ? '⏸️ 暂停自动刷新' : '▶️ 继续自动刷新';
+        autoRefreshBtn.classList.toggle('secondary', !autoRefresh);
+    });
+
+    clearBtn.addEventListener('click', () => {
+        currentTaskId = null;
+        document.querySelectorAll('.task-item').forEach(item => {
+            item.classList.remove('active');
+        });
+
+        // 清空详情显示
+        document.getElementById('taskDetails').innerHTML = `
+                <div style="color: #666; text-align: center; padding: 20px;">
+                    点击左侧任务查看详情
+                </div>
+            `;
+
+        // 绘制空地图
+        drawMap();
+    });
+
+    zoomInBtn.addEventListener('click', () => {
+        scale = Math.min(5, scale * 1.2);
+        drawMap();
+    });
+
+    zoomOutBtn.addEventListener('click', () => {
+        scale = Math.max(0.1, scale / 1.2);
+        drawMap();
+    });
+
+    resetViewBtn.addEventListener('click', () => {
+        scale = 1.0;
+        panOffset = { x: 0, y: 0 };
+        drawMap();
+    });
+
+    showObstaclesBtn.addEventListener('click', () => {
+        showObstacles = !showObstacles;
+        showObstaclesBtn.textContent = showObstacles ? '🧱 隐藏障碍物' : '🧱 显示障碍物';
+        showObstaclesBtn.classList.toggle('secondary', !showObstacles);
+
+        // 重新绘制当前任务的地图
+        if (currentTaskId) {
+            fetchTaskDetail(currentTaskId).then(taskDetail => {
+                if (taskDetail && !taskDetail.error) {
+                    drawMapWithTask(taskDetail);
+                }
+            });
+        } else {
+            drawMap();
+        }
+    });
+
+    // 页面加载完成后初始化
+    window.addEventListener('DOMContentLoaded', async () => {
+        initCanvas();
+
+        // 获取初始数据
+        const tasksData = await fetchTasks();
+        if (tasksData) {
+            updateTaskList(tasksData);
+
+            // 如果有任务，自动选择第一个
+            if (tasksData.activeTasks && tasksData.activeTasks.length > 0) {
+                await selectTask(tasksData.activeTasks[0].taskId);
+            } else {
+                // 绘制空地图
+                drawMap();
+            }
+        }
+
+        // 启动自动刷新
+        startAutoRefresh();
+
+        console.log('AGV路径规划可视化系统已启动');
+    });
+</script>
+</body>
+</html>

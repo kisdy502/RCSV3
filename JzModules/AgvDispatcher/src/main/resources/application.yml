@@ -1,0 +1,12 @@
+server:
+  port: 11555
+  servlet:
+    context-path: /
+
+spring:
+  profiles:
+    active: test
+  web:
+    resources:
+      static-locations: classpath:/static/,classpath:/views/,classpath:/templates/
+

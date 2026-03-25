@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <artifactId>RCSV3</artifactId>
+        <groupId>com.jizhi</groupId>
+        <version>${revision}</version>
+    </parent>
+
+
+    <modules>
+        <module>jz-bom</module>
+        <module>jz-base-common</module>
+<!--        <module>jz-lib-modbus</module>-->
+<!--        <module>jz-lib-rpc</module>-->
+<!--        <module>jz-lib-deploy</module>-->
+<!--        <module>jz-lib-robot</module>-->
+        <module>jz-lib-vda5050</module>
+    </modules>
+
+    <groupId>com.jizhi</groupId>
+    <artifactId>JzCommon</artifactId>
+    <name>JzCommon</name>
+    <description>JzCommon</description>
+
+    <packaging>pom</packaging>
+
+</project>

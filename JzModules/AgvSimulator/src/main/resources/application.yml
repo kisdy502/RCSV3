@@ -1,0 +1,23 @@
+server:
+  port: 22777
+  servlet:
+    context-path: /
+
+
+# 数据源配置
+spring:
+  profiles:
+    active: test
+  web:
+    resources:
+      static-locations: classpath:/static/,classpath:/views/,classpath:/templates/
+  websocket:
+    allowed-origins: "*"
+
+
+
+
+
+
+
+

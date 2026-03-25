@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>AGV路径规划测试平台</title>
+    <!-- 引入Tailwind CSS -->
+    <link rel="stylesheet" href="/css/tailwind.min.css">
+    <style>
+        /* 关键修复：设置 html 和 body 为 100% 高度 */
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        /* 可选：为地图容器设置一个最小高度，确保内容过少时布局依然美观 */
+        #mapRoot {
+            min-height: 500px;
+        }
+    </style>
+</head>
+<body class="font-sans h-full"> <!-- 确保body高度可以继承 -->
+<div id="app" class="h-full">
+    <!-- 新的主网格容器：左右并排，三七分，占满高度 -->
+    <div class="grid grid-cols-10 h-full p-2"> <!-- [1,4](@ref) -->
+
+        <!-- 左侧数据面板 (dataRoot) -->
+        <div id="dataRoot" class="col-span-2 overflow-y-auto h-full"> <!-- 添加内边距和滚动条 -->
+            <div class="text-right mb-1">
+                <button @click="loadMapInfo"
+                        class="bg-blue-600 hover:bg-blue-800 text-white px-2 py-1 rounded transition-colors">
+                    加载地图
+                </button>
+            </div>
+            <div id="mapInfo" class="bg-gray-50 p-1 rounded max-h-64 overflow-y-auto" v-html="mapInfoDisplay">
+            </div>
+
+            <div class="mt-2"> <!-- 添加顶部外边距与上方内容分隔 -->
+                <div class="flex flex-wrap gap-2 mb-2">
+                    <div class="flex-1 min-w-[200px]">
+                        <select v-model="formData.startNode"
+                                class="w-full p-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="">请选择起点</option>
+                            <option v-for="node in nodes.slice().sort((a, b) => a.id.localeCompare(b.id))" :key="node.id" :value="node.id">
+                                {{ node.id }} - {{ node.name }}
+                            </option>
+                        </select>
+                    </div>
+
+                    <div class="flex-1 min-w-[200px]">
+                        <select v-model="formData.endNode"
+                                class="w-full p-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="">请选择终点</option>
+                            <option v-for="node in stationNodes.slice().sort((a, b) => a.id.localeCompare(b.id))" :key="node.id" :value="node.id">
+                                {{ node.id }} - {{ node.name }}
+                            </option>
+                        </select>
+                    </div>
+
+                    <div class="flex-1 min-w-[200px]">
+                        <select v-model="formData.agvId"
+                                class="w-full p-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="">请选择AGV</option>
+                            <option v-for="agv in agvList" :key="agv" :value="agv">{{ agv }}</option>
+                        </select>
+                    </div>
+
+                    <div class="flex-1 min-w-[200px]">
+                        <select v-model="formData.algorithm"
+                                class="w-full p-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="">请选择算法</option>
+                            <option value="astar">A*算法</option>
+                            <option value="dijkstra">Dijkstra算法</option>
+                        </select>
+                    </div>
+
+                    <div class="flex gap-2 w-full justify-end mt-2"> <!-- 调整按钮组布局 -->
+                        <button @click="sendTaskDispatch"
+                                class="bg-blue-600 hover:bg-blue-800 text-white px-2 py-1 rounded transition-colors">
+                            发送任务
+                        </button>
+                        <button @click="visualizeRoute"
+                                class="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded transition-colors">
+                            显示路线
+                        </button>
+                        <button @click="clearRoute"
+                                class="bg-gray-600 hover:bg-gray-700 text-white px-2 py-1 rounded transition-colors">
+                            清除路线
+                        </button>
+                    </div>
+                </div>
+
+                <div id="planningResult" class="bg-gray-50 p-1 rounded max-h-72 overflow-y-auto"
+                     v-html="planningResultDisplay"></div>
+                <p>canvas 缩放比例:{{zoomState.level}}</p>
+            </div>
+        </div>
+
+        <!-- 右侧地图容器 (mapRoot) -->
+        <div id="mapRoot" class="h-full col-span-8" style="position: relative; width: 100%; height: 100%;"> <!-- 添加内边距 -->
+            <!-- 静态层：地图、网格、节点、边等 -->
+            <canvas
+                    id="mapCanvasStatic"
+                    style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
+                    class="w-full border border-gray-300 bg-white h-full"
+                    @wheel="handleZoom"
+                    @mousedown="handleMouseDown"
+                    @mousemove="handleMouseMove"
+                    @mouseup="handleMouseUp"
+                    @click="handleCanvasClick"
+                    @contextmenu="handleContextMenu">
+            </canvas>
+
+            <!-- 动态层：AGV 图标（透明背景，覆盖在上层） -->
+            <canvas
+                    id="mapCanvasDynamic"
+                    style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
+                    @wheel="handleDynamicWheel"
+                    @mousedown="handleDynamicMouseDown"
+                    @mousemove="handleDynamicMouseMove"
+                    @mouseup="handleDynamicMouseUp"
+                    @click="handleDynamicCanvasClick"
+                    @contextmenu.prevent="handleDynamicContextMenu">
+            </canvas>
+        </div>
+    </div>
+</div>
+<script type="text/javascript" src="/js/dialog/common_toast.js"></script>
+<script type="text/javascript" src="/js/axios.min.js"></script>
+<script type="text/javascript" src="/js/pgm_helper.js"></script>
+<script type="text/javascript" src="/js/coordinate_transformer.js"></script>
+<script type="text/javascript" src="/js/fun_util.js"></script>
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

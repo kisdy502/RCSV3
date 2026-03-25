@@ -1,0 +1,149 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0px;
+}
+
+.container {
+    margin: 5px 5px;
+}
+
+/*.header { background: #2c3e50; color: white; padding: 1px; border-radius: 5px; }*/
+.section {
+    margin: 1px 0;
+    padding: 1px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+}
+
+.row {
+    display: flex;
+    gap: 3px;
+    margin-bottom: 1px;
+}
+
+.form-group {
+    flex: 1;
+}
+
+label {
+    display: block;
+    margin-bottom: 1px;
+    font-weight: bold;
+}
+
+input, select, button {
+    padding: 5px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+button {
+    background: #3498db;
+    color: white;
+    border: none;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+button:hover {
+    background: #2980b9;
+}
+
+.success {
+    color: #27ae60;
+}
+
+.error {
+    color: #e74c3c;
+}
+
+.warning {
+    color: #f39c12;
+}
+
+.result {
+    background: #f8f9fa;
+    padding: 4px;
+    border-radius: 4px;
+    margin-top: 10px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.grid-container {
+    display: grid;
+    grid-template-columns: 1fr 2fr; /* 2fr 占三分之二，1fr 占三分之一 */
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.grid-1 {
+    grid-column: 1; /* 占据第一列 */
+}
+
+.grid-2 {
+    grid-column: 2; /* 占据第二列 */
+}
+
+#mapCanvas {
+    width: 100%;
+    border: 1px solid #ddd;
+    background: #FFFFFA;
+    height: 600px;
+}
+
+.node {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+
+.station {
+    background: #e74c3c;
+}
+
+.path {
+    background: #3498db;
+}
+
+.intersection {
+    background: #9b59b6;
+}
+
+.route {
+    background: #2ecc71;
+}
+
+.edge {
+    position: absolute;
+    height: 2px;
+    transform-origin: 0 0;
+}
+
+.execution-status {
+    margin-top: 4px;
+}
+
+.status-item {
+    padding: 4px;
+    margin: 2px 0;
+    border-left: 4px solid #ddd;
+}
+
+.status-sent {
+    border-left-color: #3498db;
+}
+
+.status-executing {
+    border-left-color: #f39c12;
+}
+
+.status-completed {
+    border-left-color: #27ae60;
+}
+
+.status-failed {
+    border-left-color: #e74c3c;
+}

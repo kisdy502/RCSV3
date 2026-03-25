@@ -1,0 +1,144 @@
+# redis 单机配置(单机与集群只能开启一个另一个需要注释掉)
+spring.data:
+  redis:
+    # 地址
+    host: 127.0.0.1
+    # 端口，默认为6379
+    port: 6379
+    # 数据库索引
+    database: 3
+    # 密码(如没有密码请注释掉)
+    # password:
+    # 连接超时时间
+    timeout: 10s
+    # 是否开启ssl
+    ssl.enabled: false
+
+# 数据源配置
+spring:
+  datasource:
+    type: com.zaxxer.hikari.HikariDataSource
+    # 动态数据源文档 https://www.kancloud.cn/tracy5546/dynamic-datasource/content
+    dynamic:
+      enabled: true
+      # 性能分析插件(有性能损耗 不建议生产环境使用)
+      p6spy: false
+      # 设置默认的数据源或者数据源组,默认值即为 master
+      primary: master
+      # 严格模式 匹配不到数据源则报错
+      strict: true
+      datasource:
+        # 主库数据源
+        master:
+          type: ${spring.datasource.type}
+          driverClassName: com.mysql.cj.jdbc.Driver
+          # jdbc 所有参数配置参考 https://lionli.blog.csdn.net/article/details/122018562
+          # rewriteBatchedStatements=true 批处理优化 大幅提升批量插入更新删除性能(对数据库有性能损耗 使用批量操作应考虑性能问题)
+          url: "jdbc:mysql://127.0.0.1:3306/db_rcs?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior 
+          =convertToNull&useSSL=true&serverTimezone=GMT%2B8&autoReconnect=true&rewriteBatchedStatements=true"
+          username: root
+          password: jizhi.406
+        # 从库数据源
+        slave:
+          lazy: true
+          type: ${spring.datasource.type}
+          driverClassName: com.mysql.cj.jdbc.Driver
+          url: "jdbc:mysql://127.0.0.1:3306/db_rcs?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior 
+          =convertToNull&useSSL=true&serverTimezone=GMT%2B8&autoReconnect=true&rewriteBatchedStatements=true"
+          username: root
+          password: jizhi.406
+      hikari:
+        # 最大连接池数量
+        maxPoolSize: 20
+        # 最小空闲线程数量
+        minIdle: 10
+        # 配置获取连接等待超时的时间
+        connectionTimeout: 30000
+        # 校验超时时间
+        validationTimeout: 5000
+        # 空闲连接存活最大时间，默认10分钟
+        idleTimeout: 600000
+        # 此属性控制池中连接的最长生命周期，值0表示无限生命周期，默认30分钟
+        maxLifetime: 1800000
+        # 多久检查一次连接的活性
+        keepaliveTime: 30000
+  devtools:
+    restart:
+      enabled: false  # 禁用自动重启
+logging:
+  level:
+    org.springframework.web.servlet: WARN
+    org.springframework.web: WARN
+    org.springframework.web.filter: WARN
+    org.springframework.web.servlet.DispatcherServlet: WARN
+    org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping: WARN
+    org.springframework.web.servlet.mvc.method.annotation.RequestResponseBodyMethodProcessor: WARN
+    org.springframework.web.servlet.handler: WARN
+    org.springframework.web.servlet.mvc: WARN
+    org.springframework.boot.autoconfigure: INFO
+    # 或者更精确地控制
+    org.springframework.boot.autoconfigure.logging.ConditionEvaluationReportLoggingListener: WARN
+    # 屏蔽 MyBatis Mapper 扫描的 DEBUG 日志
+    org.mybatis.spring.mapper.ClassPathMapperScanner: WARN
+    # 或者整个 mybatis 包
+    org.mybatis: WARN
+    # 如果还有更多，可以设置整个 Spring 框架
+    org.springframework: INFO
+    # MyBatis 核心包
+    org.apache.ibatis: WARN
+    org.apache.ibatis.io: WARN
+    org.apache.ibatis.session: INFO
+    org.apache.ibatis.mapping: INFO
+    # 屏蔽 HandlerMapping 的详细映射日志
+    _.s.w.s.HandlerMapping.Mappings: WARN
+    # 或者更精确
+    org.springframework.web.reactive.result.method.annotation.RequestMappingHandlerMapping: WARN
+    com.zaxxer.hikari: WARN
+    com.zaxxer.hikari.pool: WARN
+  file:
+    path: ./external/logs
+    name: application-simulator
+  config:
+    classpath:logback-spring.xml            # 需确保未禁用日志配置
+
+# 模拟AGV配置
+agv:
+  simulator:
+    # AGV基本配置
+    agv-id: "AGV001"
+    name: "模拟AGV-1"
+    manufacturer: "AGV-Simulator"
+    serial-number: "SN-AGV-SIM-1"
+    version: "2.0.0"
+    agv-type: "STANDARD"
+    battery-level: 85.5
+    max-speed: 1.5
+    load-capacity: 100.0
+#    initial-node: "S001"
+    map:
+      server-url: http://localhost:11555/api/dispatch/path
+
+mqtt:
+  broker:
+    url: tcp://127.0.0.1:1883
+    client-id: agv-scheduler-client-${agv.simulator.agv-id}
+    username:  # 如果有
+    password:  # 如果有
+    automatic-reconnect: true
+    clean-session: true
+    connection-timeout: 10
+    keep-alive-interval: 60
+
+ros2:
+  websocket:
+    url: ws://127.0.0.1:9090
+    reconnect-interval: 5000
+    timeout: 10000
+
+map:
+  dir: ./external/maps
+  name: "jzt_house406.pgm"
+  image-file: "jzt_house406.pgm"
+  yaml-file: "jzt_house406.yaml"
+
+
