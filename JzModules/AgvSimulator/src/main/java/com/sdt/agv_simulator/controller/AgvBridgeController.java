@@ -48,19 +48,6 @@ public class AgvBridgeController {
         return CommonResult.success(null, "雷达数据已收到");
     }
 
-//    // 新增：获取的雷达数据
-//    @GetMapping("/get_laser_scan")
-//    public CommonResult<LaserScanDto> getSyncedScan() {
-//        LaserScanDto laserScanDto =
-//                agvStatusManager.getLaserScanData();
-//
-//        if (laserScanDto == null) {
-//            return CommonResult.failed( "没有找到雷达数据");
-//        }
-//        return CommonResult.success(laserScanDto);
-//    }
-
-
     // 命令确认
     @PostMapping("/handle_command_ack")
     public CommonResult<?> commandAck(@RequestBody CommandAckDto dto) {
@@ -79,22 +66,6 @@ public class AgvBridgeController {
         return CommonResult.success(dto, "移动控制指令已发送");
     }
 
-
-
-//    @PostMapping("/set_pose")
-//    public CommonResult<?> setPose(
-//            @RequestBody SetPoseRequest request) {
-//
-//        rosWebSocketClient.sendInitialPose(
-//                agvSimulationService.getVirtualAgv().getAgvStatus().getAgvId(),
-//                request.getX(),
-//                request.getY(),
-//                request.getTheta()
-//        );
-//
-//        return CommonResult.success("", "初始化位置指令已发送");
-//    }
-
     @PostMapping("/control")
     public CommonResult<?> controlAgv(
             @RequestBody ControlRequest request) {
@@ -102,16 +73,4 @@ public class AgvBridgeController {
                 request.getAction());
         return CommonResult.success("", "控制指令已发送");
     }
-
-//    @PostMapping("/localization_status")
-//    public CommonResult<?> localizationStatus(
-//            @RequestBody LocationStatusDto request) {
-//        log.debug("agv 初始位置状态:{}}", request);
-//        if (request.isInitialized()) {
-//            agvStatusManager.getVirtualAgv().getAgvStatus().setPositionInitialized(true);
-//        } else {
-//            agvStatusManager.getVirtualAgv().getAgvStatus().setPositionInitialized(false);
-//        }
-//        return CommonResult.success("", "初始位置请求已经收到");
-//    }
 }

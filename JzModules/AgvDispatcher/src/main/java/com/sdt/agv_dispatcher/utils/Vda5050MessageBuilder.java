@@ -13,17 +13,21 @@ import com.jizhi.vda5050.message.Vda5050Action;
 import com.jizhi.vda5050.message.Vda5050ActionParameter;
 import com.jizhi.vda5050.message.Vda5050Header;
 import com.jizhi.vda5050.message.Vda5050InstantActions;
+import com.sdt.agv_dispatcher.conflict.ResolutionStrategy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.*;
 
+import static com.sdt.agv_dispatcher.conflict.ResolutionAction.PROCEED_WITH_NOTIFICATION;
+
 @Slf4j
 @Service
 public class Vda5050MessageBuilder {
 
     // ==================== 标准 VDA5050 动作生成 ====================
+
     /**
      * 构建标准Header（复用方法）
      */
@@ -40,143 +44,233 @@ public class Vda5050MessageBuilder {
     /**
      * 生成标准 startPause 动作（VDA5050标准）
      */
-    public Vda5050InstantActions createStartPauseAction(AgvStatus agvStatus, PausePayload payload) {
-        List<Vda5050ActionParameter> params = new ArrayList<>();
-
-        if (payload.getDuration() > 0) {
-            params.add(Vda5050ActionParameter.builder()
-                    .key("duration")
-                    .value(payload.getDuration())
-                    .build());
-        }
-        params.add(Vda5050ActionParameter.builder()
-                .key("reason")
-                .value(payload.getReason())
-                .build());
-
-        return Vda5050InstantActions.builder()
-                .header(buildStandardHeader(agvStatus))
-                .actions(Collections.singletonList(
-                        Vda5050Action.builder()
-                                .actionType("startPause")  // VDA5050标准动作
-                                .actionId(generateActionId("pause"))
-                                .blockingType(Vda5050Action.BLOCKING_HARD)
-                                .actionDescription("Conflict avoidance pause")
-                                .actionParameters(params)
-                                .build()
-                ))
-                .build();
-    }
+//    public Vda5050InstantActions createStartPauseAction(AgvStatus agvStatus, PausePayload payload) {
+//        List<Vda5050ActionParameter> params = new ArrayList<>();
+//
+//        if (payload.getDuration() > 0) {
+//            params.add(Vda5050ActionParameter.builder()
+//                    .key("duration")
+//                    .value(payload.getDuration())
+//                    .build());
+//        }
+//        params.add(Vda5050ActionParameter.builder()
+//                .key("reason")
+//                .value(payload.getReason())
+//                .build());
+//
+//        return Vda5050InstantActions.builder()
+//                .header(buildStandardHeader(agvStatus))
+//                .actions(Collections.singletonList(
+//                        Vda5050Action.builder()
+//                                .actionType("startPause")  // VDA5050标准动作
+//                                .actionId(generateActionId("pause"))
+//                                .blockingType(Vda5050Action.BLOCKING_HARD)
+//                                .actionDescription("Conflict avoidance pause")
+//                                .actionParameters(params)
+//                                .build()
+//                ))
+//                .build();
+//    }
 
     /**
      * 生成标准 stopPause 动作（VDA5050标准）
      */
-    public Vda5050InstantActions createStopPauseAction(AgvStatus agvStatus) {
-        return Vda5050InstantActions.builder()
-                .header(buildStandardHeader(agvStatus))
-                .actions(Collections.singletonList(
-                        Vda5050Action.builder()
-                                .actionType("stopPause")  // VDA5050标准动作
-                                .actionId(generateActionId("resume"))
-                                .blockingType(Vda5050Action.BLOCKING_NONE)
-                                .actionDescription("Resume from pause")
-                                .build()
-                ))
-                .build();
-    }
+//    public Vda5050InstantActions createStopPauseAction(AgvStatus agvStatus) {
+//        return Vda5050InstantActions.builder()
+//                .header(buildStandardHeader(agvStatus))
+//                .actions(Collections.singletonList(
+//                        Vda5050Action.builder()
+//                                .actionType("stopPause")  // VDA5050标准动作
+//                                .actionId(generateActionId("resume"))
+//                                .blockingType(Vda5050Action.BLOCKING_NONE)
+//                                .actionDescription("Resume from pause")
+//                                .build()
+//                ))
+//                .build();
+//    }
 
     /**
      * 生成自定义 setSpeedLimit 动作（VDA5050扩展）
      */
-    public Vda5050InstantActions createSpeedLimitAction(AgvStatus agvStatus, SpeedReductionPayload payload) {
-        return Vda5050InstantActions.builder()
-                .header(buildStandardHeader(agvStatus))
-                .actions(Collections.singletonList(
-                        Vda5050Action.builder()
-                                .actionType("setSpeedLimit")  // 自定义扩展动作
-                                .actionId(generateActionId("speed"))
-                                .blockingType(Vda5050Action.BLOCKING_SOFT)
-                                .actionDescription("Automatic speed reduction for conflict avoidance")
-                                .actionParameters(Arrays.asList(
-                                        Vda5050ActionParameter.builder()
-                                                .key("maxSpeed")
-                                                .value(payload.getTargetSpeed())
-                                                .build(),
-                                        Vda5050ActionParameter.builder()
-                                                .key("reductionRatio")
-                                                .value(payload.getReductionRatio())
-                                                .build(),
-                                        Vda5050ActionParameter.builder()
-                                                .key("temporary")
-                                                .value(payload.isTemporary())
-                                                .build(),
-                                        Vda5050ActionParameter.builder()
-                                                .key("duration")
-                                                .value(payload.getDuration())
-                                                .build(),
-                                        Vda5050ActionParameter.builder()
-                                                .key("reason")
-                                                .value(payload.getReason())
-                                                .build()
-                                ))
-                                .build()
-                ))
-                .build();
-    }
+//    public Vda5050InstantActions createSpeedLimitAction(AgvStatus agvStatus, SpeedReductionPayload payload) {
+//        return Vda5050InstantActions.builder()
+//                .header(buildStandardHeader(agvStatus))
+//                .actions(Collections.singletonList(
+//                        Vda5050Action.builder()
+//                                .actionType("setSpeedLimit")  // 自定义扩展动作
+//                                .actionId(generateActionId("speed"))
+//                                .blockingType(Vda5050Action.BLOCKING_SOFT)
+//                                .actionDescription("Automatic speed reduction for conflict avoidance")
+//                                .actionParameters(Arrays.asList(
+//                                        Vda5050ActionParameter.builder()
+//                                                .key("maxSpeed")
+//                                                .value(payload.getTargetSpeed())
+//                                                .build(),
+//                                        Vda5050ActionParameter.builder()
+//                                                .key("reductionRatio")
+//                                                .value(payload.getReductionRatio())
+//                                                .build(),
+//                                        Vda5050ActionParameter.builder()
+//                                                .key("temporary")
+//                                                .value(payload.isTemporary())
+//                                                .build(),
+//                                        Vda5050ActionParameter.builder()
+//                                                .key("duration")
+//                                                .value(payload.getDuration())
+//                                                .build(),
+//                                        Vda5050ActionParameter.builder()
+//                                                .key("reason")
+//                                                .value(payload.getReason())
+//                                                .build()
+//                                ))
+//                                .build()
+//                ))
+//                .build();
+//    }
 
     /**
      * 生成标准 cancelOrder 动作（VDA5050标准）
      */
-    public Vda5050InstantActions createCancelOrderAction(AgvStatus agvStatus, StopPayload payload) {
-        List<Vda5050ActionParameter> params = new ArrayList<>();
-        params.add(Vda5050ActionParameter.builder()
-                .key("reason")
-                .value(payload.getReason())
-                .build());
-        params.add(Vda5050ActionParameter.builder()
-                .key("clearOrder")
-                .value(payload.isClearOrder())
-                .build());
-
-        return Vda5050InstantActions.builder()
-                .header(buildStandardHeader(agvStatus))
-                .actions(Collections.singletonList(
-                        Vda5050Action.builder()
-                                .actionType("cancelOrder")  // VDA5050标准动作
-                                .actionId(generateActionId("stop"))
-                                .blockingType(Vda5050Action.BLOCKING_HARD)
-                                .actionDescription(payload.isEmergency() ? "Emergency stop" : "Controlled stop")
-                                .actionParameters(params)
-                                .build()
-                ))
-                .build();
-    }
+//    public Vda5050InstantActions createCancelOrderAction(AgvStatus agvStatus, StopPayload payload) {
+//        List<Vda5050ActionParameter> params = new ArrayList<>();
+//        params.add(Vda5050ActionParameter.builder()
+//                .key("reason")
+//                .value(payload.getReason())
+//                .build());
+//        params.add(Vda5050ActionParameter.builder()
+//                .key("clearOrder")
+//                .value(payload.isClearOrder())
+//                .build());
+//
+//        return Vda5050InstantActions.builder()
+//                .header(buildStandardHeader(agvStatus))
+//                .actions(Collections.singletonList(
+//                        Vda5050Action.builder()
+//                                .actionType("cancelOrder")  // VDA5050标准动作
+//                                .actionId(generateActionId("stop"))
+//                                .blockingType(Vda5050Action.BLOCKING_HARD)
+//                                .actionDescription(payload.isEmergency() ? "Emergency stop" : "Controlled stop")
+//                                .actionParameters(params)
+//                                .build()
+//                ))
+//                .build();
+//    }
 
     /**
      * 生成重新规划通知（非VDA5050标准，业务扩展）
      */
-    public Vda5050InstantActions createRePlanNotification(AgvStatus agvStatus, RePlanPayload payload) {
-        // 使用自定义 instantAction 通知AGV需要重新规划
+//    public Vda5050InstantActions createRePlanNotification(AgvStatus agvStatus, RePlanPayload payload) {
+//        // 使用自定义 instantAction 通知AGV需要重新规划
+//        return Vda5050InstantActions.builder()
+//                .header(buildStandardHeader(agvStatus))
+//                .actions(Collections.singletonList(
+//                        Vda5050Action.builder()
+//                                .actionType("triggerReplan")  // 自定义动作
+//                                .actionId(generateActionId("replan"))
+//                                .blockingType(Vda5050Action.BLOCKING_NONE)
+//                                .actionDescription("Trigger path replanning")
+//                                .actionParameters(Arrays.asList(
+//                                        Vda5050ActionParameter.builder()
+//                                                .key("originalOrderId")
+//                                                .value(payload.getOriginalOrderId())
+//                                                .build(),
+//                                        Vda5050ActionParameter.builder()
+//                                                .key("preserveProgress")
+//                                                .value(payload.isPreserveProgress())
+//                                                .build()
+//                                ))
+//                                .build()
+//                ))
+//                .build();
+//    }
+
+
+    /**
+     * 直接构建VDA5050即时动作 - 无需中间对象
+     */
+    public Vda5050InstantActions buildVda5050InstantActions(AgvStatus agvStatus, ResolutionStrategy strategy) {
+        List<Vda5050Action> actions = new ArrayList<>();
+
+        switch (strategy.getType()) {
+            case PROCEED_WITH_CAUTION:
+                actions.add(Vda5050Action.builder()
+                        .actionType("setSpeedLimit")  // 自定义扩展动作
+                        .actionId(generateActionId("speed" + agvStatus.getAgvId()))
+                        .blockingType(Vda5050Action.BLOCKING_SOFT)
+                        .actionDescription("Conflict avoidance: speed reduction")
+                        .actionParameters(Arrays.asList(
+                                Vda5050ActionParameter.builder()
+                                        .key("maxSpeed")
+                                        .value(agvStatus.getMaxSpeed() * strategy.getTargetSpeed())
+                                        .build(),
+                                Vda5050ActionParameter.builder()
+                                        .key("reason")
+                                        .value(strategy.getReason())
+                                        .build()
+                        ))
+                        .build());
+                break;
+
+            case STOP:
+                actions.add(Vda5050Action.builder()
+                        .actionType("cancelOrder")  // VDA5050预定义动作
+                        .actionId(generateActionId("stop" + agvStatus.getAgvId()))
+                        .blockingType(Vda5050Action.BLOCKING_NONE)
+                        .actionDescription("Conflict avoidance: emergency stop")
+                        .build());
+                break;
+
+            case WAIT:
+            case YIELD_AND_WAIT:
+                actions.add(Vda5050Action.builder()
+                        .actionType("startPause")  // VDA5050预定义动作 [^60^]
+                        .actionId(generateActionId("pause" + agvStatus.getAgvId()))
+                        .blockingType(Vda5050Action.BLOCKING_NONE)
+                        .actionDescription("Conflict avoidance: yield and wait")
+                        .actionParameters(Collections.singletonList(
+                                Vda5050ActionParameter.builder()
+                                        .key("duration")
+                                        .value(strategy.getWaitTime() != null ?
+                                                strategy.getWaitTime().getSeconds() : 5)
+                                        .build()
+                        ))
+                        .build());
+                break;
+
+            case REVERSE_AND_WAIT:
+                // 倒车需要自定义动作或组合动作
+                actions.add(Vda5050Action.builder()
+                        .actionType("reverseToPoint")  // 自定义扩展动作
+                        .actionId(generateActionId("reverse:" + agvStatus.getAgvId()))
+                        .blockingType(Vda5050Action.BLOCKING_HARD)
+                        .actionDescription("Narrow aisle: reverse to exit point")
+                        .actionParameters(Arrays.asList(
+                                Vda5050ActionParameter.builder()
+                                        .key("targetPoint")
+                                        .value(strategy.getWaitPoint())
+                                        .build(),
+                                Vda5050ActionParameter.builder()
+                                        .key("speed")
+                                        .value(0.3)
+                                        .build()
+                        ))
+                        .build());
+                break;
+
+            case REPLAN_PATH:
+                // 路径更新通过order主题发送，不是instantAction
+                // 这里可以发送通知或等待服务器重发order
+                log.info("路径重规划策略，等待新的order消息");
+                return null; // 不发送instantAction
+
+            default:
+                log.warn("未知的策略类型: {}", strategy.getType());
+                return null;
+        }
+
         return Vda5050InstantActions.builder()
                 .header(buildStandardHeader(agvStatus))
-                .actions(Collections.singletonList(
-                        Vda5050Action.builder()
-                                .actionType("triggerReplan")  // 自定义动作
-                                .actionId(generateActionId("replan"))
-                                .blockingType(Vda5050Action.BLOCKING_NONE)
-                                .actionDescription("Trigger path replanning")
-                                .actionParameters(Arrays.asList(
-                                        Vda5050ActionParameter.builder()
-                                                .key("originalOrderId")
-                                                .value(payload.getOriginalOrderId())
-                                                .build(),
-                                        Vda5050ActionParameter.builder()
-                                                .key("preserveProgress")
-                                                .value(payload.isPreserveProgress())
-                                                .build()
-                                ))
-                                .build()
-                ))
+                .actions(actions)
                 .build();
     }
 

@@ -466,13 +466,4 @@ public class Ros2WebSocketClient {
     public void addMessageListener(MessageListener listener) {
         listeners.add(listener);
     }
-
-    // 在收到ROS2消息时，通知所有监听器
-    private void handleIncomingMessage(String message) {
-        for (MessageListener listener : listeners) {
-            listener.onMessage(message);
-        }
-    }
-
-
 }

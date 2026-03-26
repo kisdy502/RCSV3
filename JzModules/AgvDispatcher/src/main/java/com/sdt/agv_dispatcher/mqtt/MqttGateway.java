@@ -773,7 +773,6 @@ public class MqttGateway implements MqttCallback {
         } catch (Exception e) {
             log.error("处理位置更新消息失败", e);
         }
-
     }
 
     private void doHandlePositionUpdate(String topic, String message, Vda5050PositionUpdateMessage positionMessage) {
@@ -891,13 +890,18 @@ public class MqttGateway implements MqttCallback {
     public void handleAutoConflictResolution(AgvStatus agvStatus, Task task, ResolutionStrategy strategy) {
         try {
             // 构建控制命令（业务Bean）
-            AgvControlCommand command = buildControlCommand(agvStatus, strategy);
+//            AgvControlCommand command = buildControlCommand(agvStatus, strategy);
+            Vda5050InstantActions vda5050InstantActions = vda5050MessageBuilder.buildVda5050InstantActions(agvStatus
+                    , strategy);
             // 执行命令
-            executeCommand(agvStatus, command);
+//            executeCommand(agvStatus, command);
+            String topic = Vda5050TopicConstants.buildSimplifiedTopic(agvStatus.getAgvId(),
+                    Vda5050TopicConstants.TOPIC_INSTANT_ACTIONS);
+            publish(topic, vda5050InstantActions);
             // 记录审计日志
         } catch (Exception e) {
             log.error("自动处理冲突失败: AGV={}", agvStatus.getAgvId(), e);
-            sendEmergencyStop(agvStatus, "CONFLICT_RESOLUTION_FAILED");
+//            sendEmergencyStop(agvStatus, "CONFLICT_RESOLUTION_FAILED");
         }
     }
 
@@ -905,191 +909,191 @@ public class MqttGateway implements MqttCallback {
     /**
      * 构建控制命令（核心转换逻辑）- 完善版
      */
-    private AgvControlCommand buildControlCommand(AgvStatus agvStatus, ResolutionStrategy strategy) {
-        Object payload;
-        AgvControlCommand.ControlCommandType commandType;
-
-        switch (strategy.getType()) {
-            case PROCEED:
-                // 正常行驶，无需特殊处理
-                payload = ProceedPayload.builder()
-                        .normalSpeed(true)
-                        .reason(strategy.getReason())
-                        .build();
-                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
-                break;
-
-            case PROCEED_WITH_CAUTION:
-                payload = SpeedReductionPayload.builder()
-                        .targetSpeed(agvStatus.getMaxSpeed() * strategy.getTargetSpeed())
-                        .reductionRatio(0.5)
-                        .temporary(true)
-                        .duration(strategy.getWaitTime() != null ?
-                                strategy.getWaitTime() : null)
-                        .reason(strategy.getReason())
-                        .build();
-                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
-                break;
-
-            case STOP:
-                payload = StopPayload.builder()
-                        .emergency(true)
-                        .clearOrder(false)
-                        .reason(strategy.getReason())
-                        .build();
-                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
-                break;
-
-            case WAIT:
-            case YIELD_AND_WAIT:
-                payload = PausePayload.builder()
-                        .duration(strategy.getWaitTime() != null ?
-                                strategy.getWaitTime().getSeconds() : 5)
-                        .resumeAutomatically(true)
-                        .waitForAgvId(strategy.getYieldToAgvId())
-                        .reason(strategy.getReason())
-                        .build();
-                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
-                break;
-
-            case WAIT_AT_POINT:
-                payload = WaitAtPointPayload.builder()
-                        .waitPointId(strategy.getWaitPoint())
-                        .duration(strategy.getWaitTime() != null ?
-                                strategy.getWaitTime().getSeconds() : 10)
-                        .reason(strategy.getReason())
-                        .build();
-                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
-                break;
-
-            case REPLAN_PATH:
-                payload = RePlanPayload.builder()
-                        .originalOrderId(agvStatus.getCurrentOrderId())
-                        .newPath(strategy.getAlternativePath())
-                        .preserveProgress(true)
-                        .reason(strategy.getReason())
-                        .build();
-                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
-                break;
-
-            case RELEASE_AND_REPLAN:
-                payload = ReleaseAndReplanPayload.builder()
-                        .releaseAllResources(true)
-                        .preserveOrder(true)
-                        .reason(strategy.getReason())
-                        .build();
-                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
-                break;
-
-            case RELEASE_LAST_RESOURCE:
-                payload = ReleaseResourcePayload.builder()
-                        .releaseLastOnly(true)
-                        .reason(strategy.getReason())
-                        .build();
-                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
-                break;
-
-            case ADJUST_SPEED:
-            case COORDINATE_PASSING:
-                payload = SpeedAdjustmentPayload.builder()
-                        .targetSpeed(strategy.getTargetSpeed())
-                        .temporary(true)
-                        .reason(strategy.getReason())
-                        .build();
-                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
-                break;
-
-//            case SLOW_DOWN:
+//    private AgvControlCommand buildControlCommand(AgvStatus agvStatus, ResolutionStrategy strategy) {
+//        Object payload;
+//        AgvControlCommand.ControlCommandType commandType;
+//
+//        switch (strategy.getType()) {
+//            case PROCEED:
+//                // 正常行驶，无需特殊处理
+//                payload = ProceedPayload.builder()
+//                        .normalSpeed(true)
+//                        .reason(strategy.getReason())
+//                        .build();
+//                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
+//                break;
+//
+//            case PROCEED_WITH_CAUTION:
 //                payload = SpeedReductionPayload.builder()
-//                        .targetSpeed(agvStatus.getMaxSpeed() * 0.5)
+//                        .targetSpeed(agvStatus.getMaxSpeed() * strategy.getTargetSpeed())
 //                        .reductionRatio(0.5)
+//                        .temporary(true)
+//                        .duration(strategy.getWaitTime() != null ?
+//                                strategy.getWaitTime() : null)
+//                        .reason(strategy.getReason())
+//                        .build();
+//                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
+//                break;
+//
+//            case STOP:
+//                payload = StopPayload.builder()
+//                        .emergency(true)
+//                        .clearOrder(false)
+//                        .reason(strategy.getReason())
+//                        .build();
+//                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
+//                break;
+//
+//            case WAIT:
+//            case YIELD_AND_WAIT:
+//                payload = PausePayload.builder()
+//                        .duration(strategy.getWaitTime() != null ?
+//                                strategy.getWaitTime().getSeconds() : 5)
+//                        .resumeAutomatically(true)
+//                        .waitForAgvId(strategy.getYieldToAgvId())
+//                        .reason(strategy.getReason())
+//                        .build();
+//                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
+//                break;
+//
+//            case WAIT_AT_POINT:
+//                payload = WaitAtPointPayload.builder()
+//                        .waitPointId(strategy.getWaitPoint())
+//                        .duration(strategy.getWaitTime() != null ?
+//                                strategy.getWaitTime().getSeconds() : 10)
+//                        .reason(strategy.getReason())
+//                        .build();
+//                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
+//                break;
+//
+//            case REPLAN_PATH:
+//                payload = RePlanPayload.builder()
+//                        .originalOrderId(agvStatus.getCurrentOrderId())
+//                        .newPath(strategy.getAlternativePath())
+//                        .preserveProgress(true)
+//                        .reason(strategy.getReason())
+//                        .build();
+//                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
+//                break;
+//
+//            case RELEASE_AND_REPLAN:
+//                payload = ReleaseAndReplanPayload.builder()
+//                        .releaseAllResources(true)
+//                        .preserveOrder(true)
+//                        .reason(strategy.getReason())
+//                        .build();
+//                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
+//                break;
+//
+//            case RELEASE_LAST_RESOURCE:
+//                payload = ReleaseResourcePayload.builder()
+//                        .releaseLastOnly(true)
+//                        .reason(strategy.getReason())
+//                        .build();
+//                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
+//                break;
+//
+//            case ADJUST_SPEED:
+//            case COORDINATE_PASSING:
+//                payload = SpeedAdjustmentPayload.builder()
+//                        .targetSpeed(strategy.getTargetSpeed())
 //                        .temporary(true)
 //                        .reason(strategy.getReason())
 //                        .build();
 //                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
 //                break;
-
-            default:
-                log.warn("未知的策略类型: {}, 使用默认处理", strategy.getType());
-                payload = ProceedPayload.builder()
-                        .normalSpeed(true)
-                        .reason("默认处理: " + strategy.getReason())
-                        .build();
-                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
-        }
-
-        return AgvControlCommand.builder()
-                .agvId(agvStatus.getAgvId())
-                .commandType(commandType)
-                .payload(payload)
-                .timestamp(LocalDateTime.now())
-                .correlationId(UUID.randomUUID().toString())
-                .priority(calculateCommandPriority(strategy))
-                .build();
-    }
+//
+////            case SLOW_DOWN:
+////                payload = SpeedReductionPayload.builder()
+////                        .targetSpeed(agvStatus.getMaxSpeed() * 0.5)
+////                        .reductionRatio(0.5)
+////                        .temporary(true)
+////                        .reason(strategy.getReason())
+////                        .build();
+////                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
+////                break;
+//
+//            default:
+//                log.warn("未知的策略类型: {}, 使用默认处理", strategy.getType());
+//                payload = ProceedPayload.builder()
+//                        .normalSpeed(true)
+//                        .reason("默认处理: " + strategy.getReason())
+//                        .build();
+//                commandType = AgvControlCommand.ControlCommandType.INSTANT_ACTION;
+//        }
+//
+//        return AgvControlCommand.builder()
+//                .agvId(agvStatus.getAgvId())
+//                .commandType(commandType)
+//                .payload(payload)
+//                .timestamp(LocalDateTime.now())
+//                .correlationId(UUID.randomUUID().toString())
+//                .priority(calculateCommandPriority(strategy))
+//                .build();
+//    }
 
     /**
      * 根据策略计算命令优先级
      */
-    private int calculateCommandPriority(ResolutionStrategy strategy) {
-        return switch (strategy.getType()) {
-            case STOP -> 10;           // 最高优先级
-            case RELEASE_AND_REPLAN -> 9;
-            case REPLAN_PATH -> 8;
-            case PROCEED_WITH_CAUTION -> 5;
-            case WAIT, YIELD_AND_WAIT -> 4;
-            case ADJUST_SPEED -> 3;
-            default -> 1;
-        };
-    }
+//    private int calculateCommandPriority(ResolutionStrategy strategy) {
+//        return switch (strategy.getType()) {
+//            case STOP -> 10;           // 最高优先级
+//            case RELEASE_AND_REPLAN -> 9;
+//            case REPLAN_PATH -> 8;
+//            case PROCEED_WITH_CAUTION -> 5;
+//            case WAIT, YIELD_AND_WAIT -> 4;
+//            case ADJUST_SPEED -> 3;
+//            default -> 1;
+//        };
+//    }
 
     /**
      * 执行控制命令（转换为VDA5050并发送）
      */
-    private void executeCommand(AgvStatus agvStatus, AgvControlCommand command) {
-        String agvId = command.getAgvId();
-        Object payload = command.getPayload();
+//    private void executeCommand(AgvStatus agvStatus, AgvControlCommand command) {
+//        String agvId = command.getAgvId();
+//        Object payload = command.getPayload();
+//
+//        if (Objects.requireNonNull(command.getCommandType()) == AgvControlCommand.ControlCommandType.INSTANT_ACTION) {
+//            Vda5050InstantActions vdaAction = convertToVda5050(agvStatus, payload);
+//            sendVda5050InstantAction(agvId, vdaAction);
+//        } else {
+//            log.warn("未支持的命令类型: {}", command.getCommandType());
+//        }
+//    }
 
-        if (Objects.requireNonNull(command.getCommandType()) == AgvControlCommand.ControlCommandType.INSTANT_ACTION) {
-            Vda5050InstantActions vdaAction = convertToVda5050(agvStatus, payload);
-            sendVda5050InstantAction(agvId, vdaAction);
-        } else {
-            log.warn("未支持的命令类型: {}", command.getCommandType());
-        }
-    }
-
-    public void sendEmergencyStop(AgvStatus agvStatus, String reason) {
-        StopPayload payload = StopPayload.builder()
-                .reason(reason)
-                .emergency(true)
-                .clearOrder(true)
-                .build();
-
-        AgvControlCommand command = AgvControlCommand.builder()
-                .agvId(agvStatus.getAgvId())
-                .commandType(AgvControlCommand.ControlCommandType.INSTANT_ACTION)
-                .payload(payload)
-                .build();
-
-        executeCommand(agvStatus, command);
-    }
+//    public void sendEmergencyStop(AgvStatus agvStatus, String reason) {
+//        StopPayload payload = StopPayload.builder()
+//                .reason(reason)
+//                .emergency(true)
+//                .clearOrder(true)
+//                .build();
+//
+//        AgvControlCommand command = AgvControlCommand.builder()
+//                .agvId(agvStatus.getAgvId())
+//                .commandType(AgvControlCommand.ControlCommandType.INSTANT_ACTION)
+//                .payload(payload)
+//                .build();
+//
+//        executeCommand(agvStatus, command);
+//    }
 
 
     /**
      * 转换为VDA5050协议消息
      */
-    private Vda5050InstantActions convertToVda5050(AgvStatus agvStatus, Object payload) {
-        if (payload instanceof SpeedReductionPayload) {
-            return vda5050MessageBuilder.createSpeedLimitAction(agvStatus, (SpeedReductionPayload) payload);
-        } else if (payload instanceof PausePayload) {
-            return vda5050MessageBuilder.createStartPauseAction(agvStatus, (PausePayload) payload);
-        } else if (payload instanceof StopPayload) {
-            return vda5050MessageBuilder.createCancelOrderAction(agvStatus, (StopPayload) payload);
-        } else if (payload instanceof RePlanPayload) {
-            return vda5050MessageBuilder.createRePlanNotification(agvStatus, (RePlanPayload) payload);
-        }
-        throw new IllegalArgumentException("Unknown payload type: " + payload.getClass());
-    }
+//    private Vda5050InstantActions convertToVda5050(AgvStatus agvStatus, Object payload) {
+//        if (payload instanceof SpeedReductionPayload) {
+//            return vda5050MessageBuilder.createSpeedLimitAction(agvStatus, (SpeedReductionPayload) payload);
+//        } else if (payload instanceof PausePayload) {
+//            return vda5050MessageBuilder.createStartPauseAction(agvStatus, (PausePayload) payload);
+//        } else if (payload instanceof StopPayload) {
+//            return vda5050MessageBuilder.createCancelOrderAction(agvStatus, (StopPayload) payload);
+//        } else if (payload instanceof RePlanPayload) {
+//            return vda5050MessageBuilder.createRePlanNotification(agvStatus, (RePlanPayload) payload);
+//        }
+//        throw new IllegalArgumentException("Unknown payload type: " + payload.getClass());
+//    }
 
     /**
      * 处理错误消息
@@ -1234,10 +1238,10 @@ public class MqttGateway implements MqttCallback {
         publish(topic, message);
     }
 
-    public void sendVda5050InstantAction(String agvId, Vda5050InstantActions vda5050InstantActions) {
-        String topic = Vda5050TopicConstants.buildSimplifiedTopic(agvId, Vda5050TopicConstants.TOPIC_INSTANT_ACTIONS);
-        publish(topic, vda5050InstantActions);
-    }
+//    public void sendVda5050InstantAction(String agvId, Vda5050InstantActions vda5050InstantActions) {
+//        String topic = Vda5050TopicConstants.buildSimplifiedTopic(agvId, Vda5050TopicConstants.TOPIC_INSTANT_ACTIONS);
+//        publish(topic, vda5050InstantActions);
+//    }
 
     /**
      * 检查连接状态

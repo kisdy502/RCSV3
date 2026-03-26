@@ -329,9 +329,7 @@ public class AgvMqttGateway implements MqttCallback, ApplicationListener<Context
 
             String jsonMessage = objectMapper.writeValueAsString(orderStateMessage);
             publish(topic, jsonMessage);
-
             log.info("发送订单状态: agv={}, order={}, state={}", agvStatus.getAgvId(), orderId, orderState);
-
         } catch (Exception e) {
             log.error("发送订单状态失败", e);
         }
