@@ -5,7 +5,6 @@ import com.jizhi.vda5050.domain.Node;
 import com.sdt.agv_simulator.ros_message.*;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -95,143 +94,62 @@ public class Ros2MessageFactory {
         return message;
     }
 
-    /**
-     * 创建二阶贝塞尔曲线消息
-     */
-    public MoveBezierCurveMessage createQuadraticBezier(
-            String agvId, String commandId,
-            String startNodeId, String endNodeId,
-            double startX, double startY, double startTheta,
-            double endX, double endY, double endTheta,
-            double controlX, double controlY) {
+    public EmergencyStopMessage createEmergencyStop(String agvId) {
+        EmergencyStopMessage msg = new EmergencyStopMessage();
+        msg.setRequestId(generateRequestId("createEmergencyStop"));
+        msg.setTimestamp(System.currentTimeMillis());
+        msg.setAgvId(agvId);
+        return msg;
+    }
 
-        MoveBezierCurveMessage message = new MoveBezierCurveMessage(generateRequestId("bezier_q"));
-        message.setAgvId(agvId);
-        message.setCommandId(commandId);
-        message.setStartNodeId(startNodeId);
-        message.setEndNodeId(endNodeId);
-        message.setStartX(startX);
-        message.setStartY(startY);
-        message.setStartTheta(startTheta);
-        message.setEndX(endX);
-        message.setEndY(endY);
-        message.setEndTheta(endTheta);
-
-        BezierControlPoint controlPoint = new BezierControlPoint(controlX, controlY);
-        message.setControlPoints(List.of(controlPoint));
-        message.setStep(0.1);
-
-        return message;
+    public ClearEmergencyMessage createClearEmergency(String agvId) {
+        ClearEmergencyMessage msg = new ClearEmergencyMessage();
+        msg.setRequestId(generateRequestId("createClearEmergency"));
+        msg.setTimestamp(System.currentTimeMillis());
+        msg.setAgvId(agvId);
+        return msg;
     }
 
     /**
-     * 创建三阶贝塞尔曲线消息
+     * 创建速度限制命令
+     * @param agvId AGV ID
+     * @param maxSpeed 最大线速度 (m/s)
+     * @return SpeedLimitMessage
      */
-    public MoveBezierCurveMessage createCubicBezier(
-            String agvId, String commandId,
-            String startNodeId, String endNodeId,
-            double startX, double startY, double startTheta,
-            double endX, double endY, double endTheta,
-            double controlX1, double controlY1,
-            double controlX2, double controlY2) {
-
-        MoveBezierCurveMessage message = new MoveBezierCurveMessage(generateRequestId("bezier_c"));
-        message.setAgvId(agvId);
-        message.setCommandId(commandId);
-        message.setStartNodeId(startNodeId);
-        message.setEndNodeId(endNodeId);
-        message.setStartX(startX);
-        message.setStartY(startY);
-        message.setStartTheta(startTheta);
-        message.setEndX(endX);
-        message.setEndY(endY);
-        message.setEndTheta(endTheta);
-
-        BezierControlPoint controlPoint1 = new BezierControlPoint(controlX1, controlY1);
-        BezierControlPoint controlPoint2 = new BezierControlPoint(controlX2, controlY2);
-        message.setControlPoints(List.of(controlPoint1, controlPoint2));
-        message.setStep(0.1);
-
-        return message;
+    public SpeedLimitMessage createSpeedLimit(String agvId, Double maxSpeed) {
+        SpeedLimitMessage msg = new SpeedLimitMessage();
+        msg.setRequestId(generateRequestId("createSpeedLimit"));
+        msg.setTimestamp(System.currentTimeMillis());
+        msg.setAgvId(agvId);
+        msg.setMaxSpeed(maxSpeed);
+        // 角速度可以按比例设置，或传入null让ROS2使用默认值
+        msg.setMaxAngularSpeed(maxSpeed != null ? maxSpeed * 0.5 : null);
+        return msg;
     }
 
     /**
-     * 创建通用贝塞尔曲线消息
+     * 创建速度限制命令（带角速度）
+     * @param agvId AGV ID
+     * @param maxSpeed 最大线速度 (m/s)
+     * @param maxAngularSpeed 最大角速度 (rad/s)
+     * @return SpeedLimitMessage
      */
-    public MoveBezierCurveMessage createBezierCurve(
-            String agvId, String commandId,
-            String startNodeId, String endNodeId,
-            double startX, double startY, double startTheta,
-            double endX, double endY, double endTheta,
-            List<BezierControlPoint> controlPoints) {
-
-        MoveBezierCurveMessage message = new MoveBezierCurveMessage(generateRequestId("bezier"));
-        message.setAgvId(agvId);
-        message.setCommandId(commandId);
-        message.setStartNodeId(startNodeId);
-        message.setEndNodeId(endNodeId);
-        message.setStartX(startX);
-        message.setStartY(startY);
-        message.setStartTheta(startTheta);
-        message.setEndX(endX);
-        message.setEndY(endY);
-        message.setEndTheta(endTheta);
-        message.setControlPoints(controlPoints);
-        message.setStep(0.1);
-
-        return message;
+    public SpeedLimitMessage createSpeedLimit(String agvId, Double maxSpeed, Double maxAngularSpeed) {
+        SpeedLimitMessage msg = new SpeedLimitMessage();
+        msg.setRequestId(generateRequestId("createSpeedLimit"));
+        msg.setTimestamp(System.currentTimeMillis());
+        msg.setAgvId(agvId);
+        msg.setMaxSpeed(maxSpeed);
+        msg.setMaxAngularSpeed(maxAngularSpeed);
+        return msg;
     }
 
-    /**
-     * 根据Edge创建贝塞尔曲线消息
-     */
-    public MoveBezierCurveMessage createBezierCurveFromEdge(
-            String agvId, String commandId,
-            Node startNode,
-            Node endNode,
-            Edge edge) {
 
-        MoveBezierCurveMessage message = new MoveBezierCurveMessage(generateRequestId("bezier"));
-        message.setAgvId(agvId);
-        message.setCommandId(commandId);
-        message.setStartNodeId(startNode.getId());
-        message.setEndNodeId(endNode.getId());
-        message.setStartX(startNode.getX());
-        message.setStartY(startNode.getY());
-        message.setStartTheta(startNode.getTheta());
-        message.setEndX(endNode.getX());
-        message.setEndY(endNode.getY());
-        message.setEndTheta(endNode.getTheta());
-        message.setStep(0.1);
 
-        if (edge.getMaxSpeed() != null) {
-            message.setMaxSpeed(edge.getMaxSpeed());
-        }
 
-        // 转换控制点
-        if (edge.getControlPoints() != null) {
-            List<BezierControlPoint> controlPoints = edge.getControlPoints().stream()
-                    .map(cp -> new BezierControlPoint(cp.getX(), cp.getY()))
-                    .toList();
-            message.setControlPoints(controlPoints);
-        }
 
-        return message;
-    }
 
-    /**
-     * 创建多段路径消息
-     */
-    public MoveMultiSegmentMessage createMultiSegmentPath(
-            String agvId, String commandId,
-            List<PathPointBean> pathPoints) {
 
-        MoveMultiSegmentMessage message = new MoveMultiSegmentMessage(generateRequestId("multi_segment"));
-        message.setAgvId(agvId);
-        message.setCommandId(commandId);
-        message.setPathPoints(pathPoints);
-        message.setStep(0.1);
 
-        return message;
-    }
+
 }

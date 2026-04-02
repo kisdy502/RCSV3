@@ -574,7 +574,7 @@ public class MqttGateway implements MqttCallback {
     private void handleTaskCancelled(TaskCompletionPayload payload) {
         try {
             // 更新AGV状态为暂停或空闲（根据业务逻辑）
-            agvStatusService.setAgvTaskStatus(payload.getAgvId(), payload.getTaskId(), AgvState.PAUSED);
+            agvStatusService.setAgvTaskStatus(payload.getAgvId(), payload.getTaskId(), AgvState.IDLE);
             log.info("任务取消: AGV={}, Task={}, 原因: {}", payload.getAgvId(), payload.getTaskId(), payload.getMessage());
             // 清理任务资源
             cleanupCancelledTask(payload.getAgvId(), payload.getTaskId());

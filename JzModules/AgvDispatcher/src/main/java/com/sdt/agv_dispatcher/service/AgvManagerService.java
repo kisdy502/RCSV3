@@ -176,9 +176,11 @@ public class AgvManagerService {
         agvStatus.setCurrentOrderId(orderId);
         agvStatus.updateStatus(state);
 
-        if (state == AgvState.EXECUTING) {
-            log.info("AGV开始执行任务: {}, Order: {}", agvId, orderId);
-        } else if (state == AgvState.IDLE) {
+        if (state == AgvState.MOVING) {
+            log.info("AGV正在移动到点: {}, Order: {}", agvId, orderId);
+        } else if (state == AgvState.EXECUTING) {
+            log.info("AGV正在作业: {}, Order: {}", agvId, orderId);
+        }else if (state == AgvState.IDLE) {
             log.info("AGV完成任务: {}, Order: {}", agvId, orderId);
         }
     }

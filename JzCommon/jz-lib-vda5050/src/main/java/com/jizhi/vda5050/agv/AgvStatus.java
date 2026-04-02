@@ -28,9 +28,12 @@ public class AgvStatus {
     // 位置信息
     private AgvPosition currentPosition;        // 当前位置
     private Double deviation = 0.0;                // 位置偏差
+    private double distanceSinceLastNode = 0.0;      // 成员变量：记录自上一个节点后行驶的距离（米）
 
     // 状态信息
     private AgvState agvState;               // AGV状态
+    private String errorCode;
+
     private BatteryState batteryState;       // 电池状态
     private OperationMode operationMode;     // 操作模式
     private Boolean enabled;                 // 是否启用
@@ -90,6 +93,7 @@ public class AgvStatus {
     // 行动信息
     private List<AgvAction> actions = new ArrayList<>();             // 当前行动列表
     private List<AgvActionState> actionStates = new ArrayList<>();   // 行动状态列表
+    private Vda5050OrderMessage.Action currentAction;
 
     // 扩展信息
     private Map<String, Object> additionalInfo = new HashMap<>(); // 附加信息
@@ -101,15 +105,16 @@ public class AgvStatus {
     private Double loadWeight;
     private Boolean positionInitialized = false;
 
-    private String lastReportNodeId="";
-    private String lastReportEdgeId="";
+    private String lastReportNodeId = "";
+    private String lastReportEdgeId = "";
+
 
     /**
      * 构造函数
      */
     public AgvStatus(String agvId) {
         this.agvId = agvId;
-        this.agvState = AgvState.IDLE;
+        this.agvState = IDLE;
         this.batteryState = BatteryState.UNKNOWN;
         this.operationMode = OperationMode.AUTOMATIC;
         this.enabled = true;
@@ -121,6 +126,23 @@ public class AgvStatus {
         this.safetyState = 0;
         this.lastUpdateTime = LocalDateTime.now();
         this.lastStateChange = LocalDateTime.now();
+    }
+
+
+    // 每次里程计更新时调用的方法（由ROS2监听器触发）
+    public void updateOdometry(double traveledDistanceDelta) {
+        distanceSinceLastNode += traveledDistanceDelta;
+    }
+
+    // 当AGV到达节点时，由业务逻辑调用（例如检测到到达后）
+    public void resetDistanceSinceLastNode() {
+        log.debug("即将重置，已移动里程: {}", distanceSinceLastNode);
+        distanceSinceLastNode = 0.0;
+    }
+
+    // 构建位置消息时调用
+    private double calculateDistanceSinceLastNode() {
+        return distanceSinceLastNode;
     }
 
     /**
@@ -183,7 +205,10 @@ public class AgvStatus {
     public void setEmergencyStop(boolean emergencyStop) {
         this.emergencyStop = emergencyStop;
         if (emergencyStop) {
-            this.agvState = EMERGENCY;
+            // 主状态改为 ERROR（VDA5050标准）
+            this.agvState = ERROR;
+            // 设置自定义错误码，便于区分急停
+            this.errorCode = "EMERGENCY_STOP";
             this.lastStateChange = LocalDateTime.now();
         }
         this.lastUpdateTime = LocalDateTime.now();
@@ -239,7 +264,7 @@ public class AgvStatus {
         if (stateMessage.getAgvState() != null) {
             Vda5050StateMessage.AgvState agvState = stateMessage.getAgvState();
             this.agvState = agvState.getAgvState() != null ?
-                    AgvState.fromVda5050Value(agvState.getAgvState()) : this.agvState;
+                    fromVda5050Value(agvState.getAgvState()) : this.agvState;
             this.batteryState = agvState.getBatteryState() != null ?
                     BatteryState.fromValue(agvState.getBatteryState()) : this.batteryState;
             this.operationMode = agvState.getOperationMode() != null ?

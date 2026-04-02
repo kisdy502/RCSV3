@@ -18,10 +18,10 @@ public enum AgvState {
 
     // VDA5050扩展状态
     WAITING("WAITING"),              // 等待
-    FINISHED("FINISHED"),            // 已完成
-    ABORTED("ABORTED"),              // 已中止
-    INITIALIZING("INITIALIZING"),    // 初始化中
-    EMERGENCY("EMERGENCY"),          // 紧急状态
+    //    FINISHED("FINISHED"),            // 已完成
+//    ABORTED("ABORTED"),              // 已中止
+//    INITIALIZING("INITIALIZING"),    // 初始化中
+//    EMERGENCY("EMERGENCY"),          // 紧急状态
     UNKNOWN("UNKNOWN");              // 未知
 
     private final String value;
@@ -74,19 +74,6 @@ public enum AgvState {
             case "WAITING":
             case "WAIT":
                 return WAITING;
-
-            case "ABORTED":
-            case "CANCELLED":
-                return ABORTED;
-
-            case "INITIALIZING":
-            case "BOOTING":
-                return INITIALIZING;
-
-            case "EMERGENCY":
-            case "EMERGENCYSTOP":
-                return EMERGENCY;
-
             default:
                 log.warn("未知的VDA5050状态值: {}, 使用默认值 UNKNOWN", vda5050Value);
                 return UNKNOWN;
@@ -94,23 +81,24 @@ public enum AgvState {
     }
 
     /**
-     * 检查是否为可执行任务的状态
+     * 是否允许接收新任务
      */
     public boolean canAcceptTask() {
-        return this == IDLE || this == WAITING || this == FINISHED;
+        return this == IDLE || this == WAITING;
     }
 
     /**
-     * 检查是否为工作中的状态
+     * 是否处于工作中（正在执行任务或充电）
      */
     public boolean isWorking() {
-        return this == AgvState.EXECUTING || this == AgvState.CHARGING;
+        return this == MOVING || this == EXECUTING || this == CHARGING;
     }
 
+
     /**
-     * 检查是否为错误状态
+     * 是否为错误状态
      */
     public boolean isError() {
-        return this == AgvState.ERROR || this == AgvState.EMERGENCY;
+        return this == ERROR;
     }
 }

@@ -3,9 +3,11 @@ package com.sdt.agv_simulator.agv;
 
 import com.jizhi.vda5050.agv.*;
 import com.jizhi.vda5050.domain.Node;
+import com.jizhi.vda5050.message.Vda5050OrderMessage;
 import com.sdt.agv_simulator.service.MapService;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +18,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
 @Data
@@ -32,12 +36,23 @@ public class VirtualAgv {
 
     private List<OrderAction> currentActions = new ArrayList<>();
 
+
+    // 当前执行的订单消息（需要保存完整引用以便恢复）
+    @Getter
+    private volatile Vda5050OrderMessage currentOrderMessage;
+
+    // 暂停状态标志
+    private final AtomicBoolean isPaused = new AtomicBoolean(false);
+
+    // 执行上下文快照
+    private final AtomicReference<ExecutionSnapshot> executionSnapshot = new AtomicReference<>();
+
     /**
      * 开始执行订单
      */
     public void startOrder(String orderId, List<String> nodes, List<String> edges) {
         agvStatus.setCurrentOrderId(orderId);
-        agvStatus.setAgvState(AgvState.EXECUTING);
+        agvStatus.setAgvState(AgvState.MOVING);
         agvStatus.setNodeSequence(nodes);
         agvStatus.setEdgeSequence(edges);
         agvStatus.setCurrentNodeIndex(0);
@@ -96,7 +111,8 @@ public class VirtualAgv {
      * 完成订单
      */
     public void completeOrder() {
-        agvStatus.setAgvState(AgvState.FINISHED);
+        agvStatus.setAgvState(AgvState.IDLE);
+        agvStatus.setErrorCode("");
         agvStatus.setOrderState("FINISHED");
         agvStatus.setLastStateChange(LocalDateTime.now());
     }
@@ -106,6 +122,7 @@ public class VirtualAgv {
      */
     public void failOrder(String error) {
         agvStatus.setAgvState(AgvState.ERROR);
+        agvStatus.setErrorCode("ORDER_ERROR");
         agvStatus.setOrderState("FAILED");
         agvStatus.setLastStateChange(LocalDateTime.now());
         agvStatus.getActiveErrors().add(error);
@@ -124,7 +141,7 @@ public class VirtualAgv {
      * 恢复订单
      */
     public void resumeOrder() {
-        agvStatus.setAgvState(AgvState.EXECUTING);
+        agvStatus.setAgvState(AgvState.MOVING);
         agvStatus.setPaused(false);
         agvStatus.setLastStateChange(LocalDateTime.now());
     }
@@ -176,6 +193,89 @@ public class VirtualAgv {
         if (agvStatus.getActionStates() != null) {
             agvStatus.getActionStates().add(actionState);
         }
+    }
+
+    /**
+     * 创建暂停快照 - 在暂停时调用
+     */
+    public ExecutionSnapshot createPauseSnapshot(String pauseReason) {
+        if (currentOrderMessage == null) {
+            return null;
+        }
+
+        ExecutionSnapshot.ActionExecutionState actionState = null;
+
+        // 如果有正在执行的动作，保存动作状态
+        if (agvStatus.getCurrentAction() != null) {
+            actionState = ExecutionSnapshot.ActionExecutionState.builder()
+                    .actionId(agvStatus.getCurrentAction().getActionId())
+                    .actionType(agvStatus.getCurrentAction().getActionType())
+                    .status("PAUSED")
+                    .progressPercent(calculateActionProgress()) // 需要实现
+                    .actionContext(captureActionContext())      // 需要实现
+                    .build();
+        }
+
+        ExecutionSnapshot snapshot = ExecutionSnapshot.builder()
+                .orderId(agvStatus.getCurrentOrderId())
+                .orderUpdateId(agvStatus.getOrderUpdateId())
+                .currentNodeIndex(agvStatus.getCurrentNodeIndex())
+                .currentEdgeIndex(agvStatus.getCurrentEdgeIndex())
+                .currentNodeId(agvStatus.getCurrentNodeId())
+                .nextNodeId(agvStatus.getNextNodeId())
+                .pausedX(agvStatus.getCurrentPosition() != null ? agvStatus.getCurrentPosition().getX() : null)
+                .pausedY(agvStatus.getCurrentPosition() != null ? agvStatus.getCurrentPosition().getY() : null)
+                .pausedTheta(agvStatus.getCurrentPosition() != null ? agvStatus.getCurrentPosition().getTheta() : null)
+                .distanceSinceLastNode(agvStatus.getDistanceSinceLastNode())
+                .actionState(actionState)
+                .currentActionId(agvStatus.getCurrentAction().getActionId())
+                .currentActionType(agvStatus.getCurrentAction().getActionType())
+                .pausedTime(LocalDateTime.now())
+                .pausedTimestampNs(System.nanoTime())
+                .pauseReason(pauseReason)
+                .build();
+
+        executionSnapshot.set(snapshot);
+        isPaused.set(true);
+
+        log.info("AGV {} 创建暂停快照: 节点索引={}, 动作={}, 原因={}",
+                agvStatus.getAgvId(), snapshot.getCurrentNodeIndex(),
+                snapshot.getCurrentActionType(), pauseReason);
+
+        return snapshot;
+    }
+
+    private Object captureActionContext() {
+        //TODO 待实现
+        return null;
+    }
+
+    private int calculateActionProgress() {
+        //TODO 待实现
+        return 0;
+    }
+
+    /**
+     * 获取暂停快照用于恢复
+     */
+    public ExecutionSnapshot getPauseSnapshot() {
+        return executionSnapshot.get();
+    }
+
+    /**
+     * 检查是否处于暂停状态
+     */
+    public boolean isPaused() {
+        return isPaused.get();
+    }
+
+
+    /**
+     * 清除暂停状态
+     */
+    public void clearPauseState() {
+        isPaused.set(false);
+        // 保留快照直到订单完成，用于可能的故障恢复
     }
 
     // 订单行动

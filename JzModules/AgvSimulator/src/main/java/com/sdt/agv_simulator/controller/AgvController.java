@@ -30,12 +30,14 @@ public class AgvController {
     private AgvStatusManager agvStatusManager;
 
     @Autowired
+    private VirtualAgv virtualAgv;
+
+    @Autowired
     private Ros2WebSocketClient rosWebSocketClient;
 
     @GetMapping("/agv")
     @ResponseBody
     public CommonResult<AgvStatusResponse> getAgvInfo() {
-        VirtualAgv virtualAgv = agvStatusManager.getVirtualAgv();
         AgvStatusResponse agvStatusResponse = new AgvStatusResponse();
         agvStatusResponse.setAgvStatus(virtualAgv.getAgvStatus());
         LaserScanDto laserScan = agvStatusManager.getLastLaserScan();
@@ -109,7 +111,7 @@ public class AgvController {
         node.setY(request.getY());
         node.setTheta(request.getTheta());
         rosWebSocketClient.sendMoveCommand(
-                agvStatusManager.getVirtualAgv().getAgvStatus().getAgvId(),
+                virtualAgv.getAgvStatus().getAgvId(),
                 request.getCommandId(),node, new Edge(), true);
 
 

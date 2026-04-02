@@ -28,24 +28,7 @@ public class Vda5050MessageBuilder {
     private MapService mapService;
 
 
-    // 成员变量：记录自上一个节点后行驶的距离（米）
-    private double distanceSinceLastNode = 0.0;
 
-    // 每次里程计更新时调用的方法（由ROS2监听器触发）
-    public void updateOdometry(double traveledDistanceDelta) {
-        distanceSinceLastNode += traveledDistanceDelta;
-    }
-
-    // 当AGV到达节点时，由业务逻辑调用（例如检测到到达后）
-    public void resetDistanceSinceLastNode() {
-        log.debug("即将重置，已移动里程: {}", distanceSinceLastNode);
-        distanceSinceLastNode = 0.0;
-    }
-
-    // 构建位置消息时调用
-    private double calculateDistanceSinceLastNode() {
-        return distanceSinceLastNode;
-    }
 
 
     /**
@@ -208,7 +191,7 @@ public class Vda5050MessageBuilder {
         position.setMapId(agvStatus.getCurrentPosition().getMapId());
         position.setTimestamp(Instant.now().toString());
         position.setVelocity(agvStatus.getVelocity());
-        position.setDistanceSinceLastNode(calculateDistanceSinceLastNode());
+        position.setDistanceSinceLastNode(agvStatus.getDistanceSinceLastNode());
         position.setRotationAngle(agvStatus.getCurrentPosition().getTheta());  // 可根据实际设置
         position.setLastNodeId(agvStatus.getLastNodeId());
         position.setCurrentNodeId(agvStatus.getCurrentNodeId());

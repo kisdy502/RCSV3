@@ -16,7 +16,9 @@ import com.jizhi.vda5050.domain.Edge;
 import com.jizhi.vda5050.domain.Node;
 import com.jizhi.vda5050.domain.PathResult;
 import com.jizhi.vda5050.message.Vda5050OrderMessage;
+import com.sdt.agv_simulator.agv.ExecutionSnapshot;
 import com.sdt.agv_simulator.agv.VirtualAgv;
+import com.sdt.agv_simulator.component.Ros2BusinessException;
 import com.sdt.agv_simulator.component.Ros2WebSocketClient;
 import com.sdt.agv_simulator.config.AgvSimulatorConfig;
 import com.sdt.agv_simulator.dto.AgvStatusDto;
@@ -30,7 +32,6 @@ import jakarta.annotation.PreDestroy;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.checkerframework.checker.units.qual.A;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,11 +40,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PostConstruct;
-import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 @Slf4j
@@ -62,7 +61,9 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
     @Autowired
     private MovementManager movementManager;
 
-    @Getter
+    @Autowired
+    private ActionManager actionManager;
+
     @Autowired
     private VirtualAgv virtualAgv;
 
@@ -77,6 +78,10 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
     @Autowired
     private Vda5050MessageBuilder vda5050MessageBuilder;
 
+    private final Gson gson = new Gson();
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Getter
     @Setter
@@ -110,8 +115,8 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
      * 启动AGV模拟
      */
     private void startAgvSimulation() {
-        if (virtualAgv == null) return;
         AgvStatus agvStatus = virtualAgv.getAgvStatus();
+        if (agvStatus == null) return;
         // 定期发送心跳
         scheduler.scheduleAtFixedRate(() -> {
             try {
@@ -123,38 +128,6 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
 
         log.info("启动AGV模拟: {}", agvStatus.getAgvId());
     }
-
-    /**
-     * 处理VDA5050即时动作消息
-     */
-//    public void processVda5050InstantActions(Vda5050Message message) {
-//        try {
-//            log.info("处理VDA5050即时动作消息: headerId={}, 序列号={}", message.getHeader().getHeaderId(),
-//                    message.getHeader().getSerialNumber());
-//
-//            // 解析payload
-//            Map<String, Object> payload = (Map<String, Object>) message.getPayload();
-//            List<Map<String, Object>> actions = (List<Map<String, Object>>) payload.get("actions");
-//
-//            if (actions != null) {
-//                for (Map<String, Object> action : actions) {
-//                    String actionId = (String) action.get("actionId");
-//                    String actionType = (String) action.get("actionType");
-//                    Map<String, Object> actionParameters = (Map<String, Object>) action.get("actionParameters");
-//
-//                    log.info("处理即时动作: actionId={}, actionType={}", actionId, actionType);
-//
-//                    // 处理不同类型的即时动作
-//                    handleInstantAction(actionId, actionType, actionParameters);
-//                }
-//            }
-//
-//        } catch (Exception e) {
-//            log.error("处理VDA5050即时动作失败", e);
-//            mqttClient.sendError("INSTANT_ACTION_ERROR", "处理即时动作失败: " + e.getMessage());
-//        }
-//    }
-
 
     /**
      * 处理VDA5050可视化消息（可选）
@@ -171,135 +144,10 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
 //            log.error("处理VDA5050可视化消息失败", e);
 //        }
 //    }
-
-    /**
-     * 处理即时动作
-     */
-    private void handleInstantAction(String actionId, String actionType, Map<String, Object> parameters) {
-        try {
-            switch (actionType) {
-                case "STOP":
-                    handleStopAction(actionId, parameters);
-                    break;
-                case "RESUME":
-                    handleResumeAction(actionId, parameters);
-                    break;
-                case "PAUSE":
-                    handlePauseAction(actionId, parameters);
-                    break;
-                case "CANCEL_ORDER":
-                    handleCancelOrderAction(actionId, parameters);
-                    break;
-                case "EMERGENCY_STOP":
-                    handleEmergencyStopAction(actionId, parameters);
-                    break;
-                case "CLEAR_ERROR":
-                    handleClearErrorAction(actionId, parameters);
-                    break;
-                default:
-                    log.warn("未知的即时动作类型: {}", actionType);
-                    updateAndSendActionState(actionId, TaskStatus.FAILED, "未知的动作类型: " + actionType);
-            }
-        } catch (Exception e) {
-            log.error("处理即时动作异常: {}", actionType, e);
-            updateAndSendActionState(actionId, TaskStatus.FAILED, "处理动作异常: " + e.getMessage());
-        }
-    }
-
     private void updateAndSendActionState(String actionId, TaskStatus actionStatus, String resultDescription) {
         virtualAgv.updateActionState(actionId, actionStatus, resultDescription);
         agvMqttGateway.sendActionState(virtualAgv.getAgvStatus(), actionId, actionStatus, resultDescription);
     }
-
-
-    /**
-     * 处理停止动作
-     */
-    private void handleStopAction(String actionId, Map<String, Object> parameters) {
-        log.info("执行停止动作: {}", actionId);
-        AgvStatus agvStatus = virtualAgv.getAgvStatus();
-        agvStatus.setAgvState(AgvState.IDLE);
-//        agvStatus.setVelocity(0.0);
-        // 发送动作状态
-        updateAndSendActionState(actionId, TaskStatus.FINISHED, "停止成功");
-
-        log.info("AGV已停止");
-    }
-
-    /**
-     * 处理恢复动作
-     */
-    private void handleResumeAction(String actionId, Map<String, Object> parameters) {
-        log.info("执行恢复动作: {}", actionId);
-
-
-        // 发送动作状态
-        updateAndSendActionState(actionId, TaskStatus.FINISHED, "恢复成功");
-
-        log.info("AGV已恢复移动");
-    }
-
-    /**
-     * 处理暂停动作
-     */
-    private void handlePauseAction(String actionId, Map<String, Object> parameters) {
-        log.info("执行暂停动作: {}", actionId);
-        AgvStatus agvStatus = virtualAgv.getAgvStatus();
-        agvStatus.setPaused(true);
-        // 发送动作状态
-        updateAndSendActionState(actionId, TaskStatus.FINISHED, "暂停成功");
-        log.info("AGV已暂停");
-    }
-
-    /**
-     * 处理取消订单动作
-     */
-    private void handleCancelOrderAction(String actionId, Map<String, Object> parameters) {
-        AgvStatus agvStatus = virtualAgv.getAgvStatus();
-        String orderId = agvStatus.getCurrentOrderId();
-        log.info("执行取消订单动作: {},对应的订单id:{}", actionId, orderId);
-        agvStatus.setOrderState("CANCELLED");
-        agvStatus.setAgvState(AgvState.IDLE);
-        agvStatus.setCurrentOrderId("");
-        agvStatus.setResultDescription("订单已取消");
-
-        // 发送订单取消状态
-        agvMqttGateway.sendOrderState(agvStatus, orderId, "CANCELLED", agvStatus.getOrderUpdateId(), "订单已取消");
-        // 发送动作状态
-        updateAndSendActionState(actionId, TaskStatus.FINISHED, "订单取消成功");
-        log.info("订单已取消");
-    }
-
-    /**
-     * 处理急停动作
-     */
-    private void handleEmergencyStopAction(String actionId, Map<String, Object> parameters) {
-        log.info("执行急停动作: {}", actionId);
-        AgvStatus agvStatus = virtualAgv.getAgvStatus();
-        agvStatus.setEmergencyStop(true);
-        agvStatus.setAgvState(AgvState.EMERGENCY);
-        // 发送动作状态
-        updateAndSendActionState(actionId, TaskStatus.FINISHED, "急停已触发");
-        // 发送错误信息
-        agvMqttGateway.sendError(agvStatus, "EMERGENCY_STOP", "急停按钮被触发");
-        log.warn("急停已触发");
-    }
-
-    /**
-     * 处理清除错误动作
-     */
-    private void handleClearErrorAction(String actionId, Map<String, Object> parameters) {
-        log.info("执行清除错误动作: {}", actionId);
-        AgvStatus agvStatus = virtualAgv.getAgvStatus();
-        agvStatus.setEmergencyStop(false);
-        agvStatus.setActions(null);
-
-        // 发送动作状态
-        updateAndSendActionState(actionId, TaskStatus.FINISHED, "错误已清除");
-
-        log.info("错误已清除，AGV恢复运行");
-    }
-
 
     /**
      * 处理VDA5050订单
@@ -359,7 +207,7 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
     }
 
     /**
-     * 处理控制命令
+     * 处理控制命令 - 修复版本
      */
     public void processControlCommand(String command, Map<String, Object> parameters) {
         if (virtualAgv == null) {
@@ -368,57 +216,218 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
         }
 
         AgvStatus agvStatus = virtualAgv.getAgvStatus();
+        String agvId = agvStatus.getAgvId();
+        log.info("AGV {} 收到控制命令: {}", agvId, command);
 
-        log.info("AGV {} 收到控制命令: {}", agvStatus.getAgvId(), command);
-
-        switch (command.toUpperCase()) {
-            case "PAUSE":
-                virtualAgv.pauseOrder();
-                agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(), "PAUSED",
-                        agvStatus.getOrderUpdateId(), "订单已暂停");
-                break;
-            case "RESUME":
-                virtualAgv.resumeOrder();
-                agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(), "RUNNING",
-                        agvStatus.getOrderUpdateId(), "订单已恢复");
-                break;
-
-            case "CANCEL":
-                virtualAgv.cancelOrder();
-                agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(), "CANCELLED",
-                        agvStatus.getOrderUpdateId() + 1, "订单已取消");
-                break;
-
-            case "EMERGENCY_STOP":
-                agvStatus.setEmergencyStop(true);
-                agvStatus.setAgvState(AgvState.EMERGENCY);
-                agvMqttGateway.sendError(agvStatus, "EMERGENCY_STOP", "紧急停止激活");
-                break;
-
-            case "RESET_EMERGENCY":
-                agvStatus.setEmergencyStop(false);
-                if (agvStatus.getAgvState() == AgvState.EMERGENCY) {
+        try {
+            switch (command.toUpperCase()) {
+                case "PAUSE":
+                    if (agvStatus.getAgvState() == AgvState.PAUSED) {
+                        log.info("AGV已暂停");
+                        return;
+                    }
+                    handlePauseCommand(agvId, agvStatus);
+                    break;
+                case "RESUME":
+                    if (agvStatus.getAgvState() == AgvState.PAUSED) {
+                        log.info("AGV未处于暂停状态，无需恢复");
+                        return;
+                    }
+                    handleResumeCommand(agvId,agvStatus);
+                    break;
+                case "CANCEL":
+                    // 1. 发送取消指令给ROS2
+                    ros2WebSocketClient.sendNavigationControl(agvId, "CANCEL");
+                    // 2. 取消当前移动任务
+                    movementManager.cancelCurrentMovement();
+                    // 3. 更新本地状态
+                    virtualAgv.cancelOrder();
+                    agvStatus.setOrderState("CANCELLED");
                     agvStatus.setAgvState(AgvState.IDLE);
-                }
-                break;
+                    agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(), "CANCELLED",
+                            agvStatus.getOrderUpdateId() + 1, "订单已取消");
+                    break;
 
-            case "CHANGE_SPEED":
-                if (parameters != null && parameters.containsKey("speed")) {
-                    Double speed = Double.parseDouble(parameters.get("speed").toString());
-//                    agvStatus.setVelocity(Math.max(0.1, Math.min(agvStatus.getMaxSpeed(), speed)));
-                }
-                break;
+                case "EMERGENCY_STOP":
+                    // 1. 发送急停指令给ROS2
+                    ros2WebSocketClient.sendEmergencyStop(agvId);
+                    // 2. 立即取消当前移动任务
+                    movementManager.cancelCurrentMovement();
+                    // 3. 更新本地状态
+                    agvStatus.setEmergencyStop(true);
+                    agvStatus.setAgvState(AgvState.ERROR);
+                    agvStatus.setErrorCode("EMERGENCY_STOP");
+                    agvMqttGateway.sendError(agvStatus, "EMERGENCY_STOP", "紧急停止激活");
+                    break;
 
-            case "CHANGE_BATTERY":
-                if (parameters != null && parameters.containsKey("level")) {
-                    Double level = Double.parseDouble(parameters.get("level").toString());
-                    agvStatus.setBatteryLevel(Math.max(0, Math.min(100, level)));
-                }
-                break;
-            default:
-                log.warn("未知的控制命令: {}", command);
-                break;
+                case "RESET_EMERGENCY":
+                    // 1. 发送清除急停指令给ROS2
+                    ros2WebSocketClient.sendClearEmergency(agvId);
+                    // 2. 更新本地状态
+                    agvStatus.setEmergencyStop(false);
+                    if (agvStatus.getAgvState() == AgvState.ERROR && Objects.equals(agvStatus.getErrorCode(),
+                            "RESET_EMERGENCY")) {
+                        agvStatus.setAgvState(AgvState.IDLE);
+                        agvStatus.setErrorCode("");
+                    }
+                    break;
+
+                case "CHANGE_SPEED":
+                    if (parameters != null && parameters.containsKey("speed")) {
+                        Double speed = Double.parseDouble(parameters.get("speed").toString());
+                        // 发送速度限制给ROS2
+                        ros2WebSocketClient.sendSpeedLimit(agvId, speed);
+                        agvStatus.setMaxSpeed(speed);
+                    }
+                    break;
+
+                case "CHANGE_BATTERY":
+                    if (parameters != null && parameters.containsKey("level")) {
+                        Double level = Double.parseDouble(parameters.get("level").toString());
+                        agvStatus.setBatteryLevel(Math.max(0, Math.min(100, level)));
+                    }
+                    break;
+
+                default:
+                    log.warn("未知的控制命令: {}", command);
+                    break;
+            }
+        } catch (Ros2BusinessException e) {
+            log.error("发送控制命令到ROS2失败: command={}, error={}", command, e.getMessage());
+            // 发送错误状态
+            agvMqttGateway.sendError(agvStatus, "CONTROL_ERROR",
+                    "控制命令执行失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 处理暂停命令
+     */
+    private void handlePauseCommand(String agvId, AgvStatus agvStatus) throws Ros2BusinessException {
+        if (agvStatus.getAgvState() == AgvState.PAUSED) {
+            log.info("AGV已经是暂停状态");
+            return;
+        }
+
+        // 1. 创建执行快照（保存完整上下文）
+        ExecutionSnapshot snapshot = virtualAgv.createPauseSnapshot("USER_PAUSE");
+
+        // 2. 停止当前移动（如果有）
+        Node currentTarget = null;
+        Edge currentEdge = null;
+        boolean wasEnd = false;
+
+        if (movementManager.getCurrentCommandId() != null) {
+            // 获取当前移动目标
+            currentTarget = new Node(); // 需要从movementManager获取
+            currentEdge = new Edge();   // 需要从movementManager获取
+            wasEnd = false; // 需要判断是否是最后一个点
+
+            movementManager.pauseCurrentMovement(currentTarget, currentEdge, wasEnd);
+        }
+
+        // 3. 暂停当前动作（如果在执行）
+        ExecutionSnapshot.ActionExecutionState actionState = null;
+        if (actionManager.getCurrentAction() != null) {
+            actionState = actionManager.pauseCurrentAction();
+            if (snapshot != null) {
+                snapshot.setActionState(actionState);
+            }
+        }
+
+        // 4. 发送暂停命令到ROS2
+        ros2WebSocketClient.sendNavigationControl(agvId, "PAUSE");
+
+        // 5. 更新AGV状态
+        virtualAgv.pauseOrder();  // 设置暂停标志
+        agvStatus.setPaused(true);
+        agvStatus.setAgvState(AgvState.PAUSED);
+
+        // 6. 发送MQTT状态更新
+        agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(), "PAUSED",
+                agvStatus.getOrderUpdateId(), "订单已暂停，节点索引=" +
+                        (snapshot != null ? snapshot.getCurrentNodeIndex() : "unknown"));
+
+        log.info("AGV {} 已暂停: 订单={}, 节点索引={}, 动作={}",
+                agvId, agvStatus.getCurrentOrderId(),
+                snapshot != null ? snapshot.getCurrentNodeIndex() : "N/A",
+                actionState != null ? actionState.getActionType() : "无");
+    }
+
+    /**
+     * 处理恢复命令
+     */
+    private void handleResumeCommand(String agvId, AgvStatus agvStatus) throws Ros2BusinessException {
+        if (agvStatus.getAgvState() != AgvState.PAUSED) {
+            log.warn("AGV不是暂停状态，无法恢复");
+            return;
+        }
+
+        // 1. 获取暂停快照
+        ExecutionSnapshot snapshot = virtualAgv.getPauseSnapshot();
+        if (snapshot == null) {
+            log.error("没有找到暂停快照，无法恢复");
+            return;
+        }
+
+        // 2. 恢复动作（如果有暂停的动作）
+        if (snapshot.getActionState() != null) {
+            boolean actionResumed = actionManager.resumeAction(snapshot.getActionState());
+            if (!actionResumed) {
+                log.warn("动作恢复失败，尝试重新执行动作");
+                // 可以选择重新执行动作或跳过
+            }
+        }
+
+        // 3. 恢复移动
+        // 需要从暂停时的位置继续
+        Node resumeFromNode = new Node();
+        resumeFromNode.setId("paused_position");
+        resumeFromNode.setX(snapshot.getPausedX());
+        resumeFromNode.setY(snapshot.getPausedY());
+        resumeFromNode.setTheta(snapshot.getPausedTheta());
+
+        // 创建恢复任务
+        CompletableFuture<Boolean> resumeFuture = movementManager.resumeMovement(resumeFromNode);
+
+        // 4. 发送恢复命令到ROS2
+        ros2WebSocketClient.sendNavigationControl(agvId, "RESUME");
+
+        // 5. 更新AGV状态
+        virtualAgv.clearPauseState();
+        agvStatus.setPaused(false);
+        agvStatus.setAgvState(AgvState.MOVING);
+
+        // 6. 重新启动订单执行线程（从断点继续）
+        resumeOrderExecution(snapshot);
+
+        // 7. 发送MQTT状态更新
+        agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(), "RUNNING",
+                agvStatus.getOrderUpdateId(), "订单已恢复，从节点索引=" + snapshot.getCurrentNodeIndex());
+
+        log.info("AGV {} 已恢复: 从节点索引={}, 位置=({}, {})",
+                agvId, snapshot.getCurrentNodeIndex(),
+                snapshot.getPausedX(), snapshot.getPausedY());
+    }
+
+    /**
+     * 从断点恢复订单执行
+     */
+    private void resumeOrderExecution(ExecutionSnapshot snapshot) {
+        // 启动新线程继续执行剩余订单
+        new Thread(() -> {
+            try {
+                Vda5050OrderMessage orderMessage = virtualAgv.getCurrentOrderMessage();
+                if (orderMessage == null) {
+                    log.error("无法恢复：没有找到原始订单消息");
+                    return;
+                }
+                AgvStatus agvStatus = virtualAgv.getAgvStatus();
+            } catch (Exception e) {
+                log.error("恢复订单执行失败", e);
+                handleMoveFailed("恢复执行异常: " + e.getMessage());
+            }
+        }).start();
     }
 
     /**
@@ -538,6 +547,7 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
         if (virtualAgv == null) return;
         AgvStatus agvStatus = virtualAgv.getAgvStatus();
         agvStatus.setAgvState(AgvState.IDLE);
+        agvStatus.setErrorCode("");
         agvStatus.setActiveErrors(null);
 
         log.info("AGV {} 故障已清除", agvId);
@@ -588,7 +598,7 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
             double dy = dto.getY() - currentPos.getY();
             double deltaDistance = Math.hypot(dx, dy);
             // 累加里程
-            vda5050MessageBuilder.updateOdometry(deltaDistance);
+            agvStatus.updateOdometry(deltaDistance);
         }
 
         // 更新速度
@@ -643,6 +653,7 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
             // 发送移动命令到ROS2
             ros2WebSocketClient.sendMoveCommand(virtualAgv.getAgvStatus().getAgvId(), commandId, node, passedEdge,
                     isEnd);
+
             // 等待移动完成（阻塞当前线程）
             return movementFuture.get();
         } catch (InterruptedException e) {
@@ -696,7 +707,7 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
      * 从命令更新位置信息
      */
     private void updatePositionFromCommand(String commandId) {
-        vda5050MessageBuilder.resetDistanceSinceLastNode();
+        virtualAgv.getAgvStatus().resetDistanceSinceLastNode();
 //        MoveCommandInfo commandInfo = movementManager.getCommandInfo(commandId);
 //        if (commandInfo != null) {
 //            // 更新当前位置
@@ -765,8 +776,8 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
         new Thread(() -> {
             try {
                 AgvStatus agvStatus = virtualAgv.getAgvStatus();
-                agvStatus.setOrderState("EXECUTING");
-                agvStatus.setAgvState(AgvState.EXECUTING);
+                agvStatus.setOrderState("RUNNING");
+                agvStatus.setAgvState(AgvState.MOVING);
                 // 发送订单开始状态
                 agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(), "RUNNING",
                         agvStatus.getOrderUpdateId(), "开始执行订单");
@@ -848,6 +859,16 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
                                 agvStatus.getOrderUpdateId(), "完成节点 " + nodePosition.getNodeId());
                     }
                 }
+
+                agvStatus.setAgvState(AgvState.EXECUTING);
+                if (orderMessage.getActions() != null && !orderMessage.getActions().isEmpty()) {
+                    for (int i = 0; i < orderMessage.getActions().size(); i++) {
+                        Vda5050OrderMessage.Action action = orderMessage.getActions().get(i);
+                        agvStatus.setCurrentAction(action);
+                        actionManager.startAction(action);
+                    }
+                }
+
                 completeOrderSimulation();
                 agvToIdle();
             } catch (Exception e) {
@@ -866,11 +887,6 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
         agvToIdle();
     }
 
-    private final Gson gson = new Gson();
-
-    @Autowired
-    private ObjectMapper objectMapper;
-    private final AtomicInteger requestIdCounter = new AtomicInteger(1000); // 请求ID生成器
 
     private final Ros2WebSocketClient.MessageListener messageListener = new Ros2WebSocketClient.MessageListener() {
 

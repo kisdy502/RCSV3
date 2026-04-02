@@ -1,5 +1,9 @@
 package com.sdt.agv_simulator.component;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
@@ -8,7 +12,9 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
+import java.io.IOException;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -18,6 +24,8 @@ public class Ros2WebSocketHandler extends TextWebSocketHandler {
 
     @Getter
     private final AtomicBoolean isServiceAvailable = new AtomicBoolean(false);
+
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     // 存储所有活跃会话（可选）
     private final Set<WebSocketSession> sessions = ConcurrentHashMap.newKeySet();
@@ -74,10 +82,15 @@ public class Ros2WebSocketHandler extends TextWebSocketHandler {
     protected void handleTextMessage(@NotNull WebSocketSession session, TextMessage message) {
         String payload = message.getPayload();
         log.debug("收到ROS2消息: {}", payload.length() > 200 ? payload.substring(0, 200) + "..." : payload);
+
+
         if (onReceiveMessageCallback != null) {
             onReceiveMessageCallback.accept(payload);
         }
 
     }
+
+
+
 
 }

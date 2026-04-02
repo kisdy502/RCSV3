@@ -27,6 +27,7 @@ public class AgvPosition {
     private Double accuracy;         // 定位精度
     private Long timestamp;          // 时间戳
     private Long timestampNs;          // 时间戳
+    @Builder.Default
     private Boolean positionInitialized = false;
 //    @JsonProperty("zoneSetId")
 //    private String zoneSetId;

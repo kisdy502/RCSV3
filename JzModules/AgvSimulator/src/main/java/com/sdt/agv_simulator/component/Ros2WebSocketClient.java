@@ -1,18 +1,10 @@
 package com.sdt.agv_simulator.component;
 
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import com.google.gson.reflect.TypeToken;
-import com.jizhi.vda5050.agv.AgvPosition;
 import com.jizhi.vda5050.domain.Edge;
 import com.jizhi.vda5050.domain.Node;
-import com.jizhi.vda5050.message.Vda5050StateMessage;
 import com.sdt.agv_simulator.ros_message.*;
 import com.sdt.agv_simulator.utils.Ros2MessageFactory;
 import jakarta.annotation.PostConstruct;
@@ -33,7 +25,6 @@ import java.net.URI;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Component
@@ -65,6 +56,9 @@ public class Ros2WebSocketClient {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // 存储等待响应的请求
+    private final ConcurrentHashMap<String, CompletableFuture<String>> pendingRequests = new ConcurrentHashMap<>();
+
 
     @PostConstruct
     public void init() {
@@ -85,6 +79,14 @@ public class Ros2WebSocketClient {
     }
 
     private void handleRos2Message(String message) {
+        String requestId = extractRequestId(message);
+        if (requestId != null) {
+            CompletableFuture<String> future = pendingRequests.remove(requestId);
+            if (future != null) {
+                future.complete(message);
+                return;
+            }
+        }
         for (MessageListener listener : listeners) {
             listener.onMessage(message);
         }
@@ -177,7 +179,8 @@ public class Ros2WebSocketClient {
         MoveToMessage moveCommand = messageFactory.createMoveCommand(agvId, commandId, node, passedEdge, isEnd);
         sendMessage(moveCommand);
 
-        log.info("发送移动命令: AGV={}, 命令ID={}, 目标({}, {}, {})",agvId, commandId, node.getX(), node.getY(), node.getTheta());
+        log.info("发送移动命令: AGV={}, 命令ID={}, 目标({}, {}, {})", agvId, commandId, node.getX(), node.getY(),
+                node.getTheta());
     }
 
     /**
@@ -201,16 +204,14 @@ public class Ros2WebSocketClient {
         sendMessage(velocityCmd);
 
         log.debug("发送速度命令: AGV={}, v({}, {}, {})", agvId, vx, vy, omega);
-
     }
 
     /**
-     * 发送AGV控制命令
+     * 发送导航控制命令（暂停/恢复/取消）
      */
-    public void sendAgvControl(String agvId, String action) throws Ros2BusinessException {
+    public void sendNavigationControl(String agvId, String action) throws Ros2BusinessException {
         AgvControlMessage controlCmd = messageFactory.createAgvControl(agvId, action);
         sendMessage(controlCmd);
-
         log.info("发送AGV控制命令: AGV={}, 动作={}", agvId, action);
     }
 
@@ -226,88 +227,50 @@ public class Ros2WebSocketClient {
     }
 
     /**
-     * 发送二阶贝塞尔曲线命令
+     * 发送急停命令
      */
-    public void sendQuadraticBezierCommand(
-            String agvId, String commandId,
-            String startNodeId, String endNodeId,
-            double startX, double startY, double startTheta,
-            double endX, double endY, double endTheta,
-            double controlX, double controlY) throws Ros2BusinessException {
-
-        MoveBezierCurveMessage bezierCmd = messageFactory.createQuadraticBezier(
-                agvId, commandId, startNodeId, endNodeId,
-                startX, startY, startTheta,
-                endX, endY, endTheta,
-                controlX, controlY
-        );
-
-        sendMessage(bezierCmd);
-
-        log.info("发送二阶贝塞尔曲线命令: AGV={}, 起点({}, {}), 终点({}, {}), 控制点({}, {})",
-                agvId, startX, startY, endX, endY, controlX, controlY);
+    public void sendEmergencyStop(String agvId) throws Ros2BusinessException {
+        EmergencyStopMessage emergencyMsg = messageFactory.createEmergencyStop(agvId);
+        sendMessage(emergencyMsg);
+        log.info("发送急停命令: AGV={}", agvId);
     }
 
     /**
-     * 发送三阶贝塞尔曲线命令
+     * 发送清除急停命令
      */
-    public void sendCubicBezierCommand(
-            String agvId, String commandId,
-            String startNodeId, String endNodeId,
-            double startX, double startY, double startTheta,
-            double endX, double endY, double endTheta,
-            double controlX1, double controlY1,
-            double controlX2, double controlY2) throws Ros2BusinessException {
-
-        MoveBezierCurveMessage bezierCmd = messageFactory.createCubicBezier(
-                agvId, commandId, startNodeId, endNodeId,
-                startX, startY, startTheta,
-                endX, endY, endTheta,
-                controlX1, controlY1, controlX2, controlY2
-        );
-
-        sendMessage(bezierCmd);
-
-        log.info("发送三阶贝塞尔曲线命令: AGV={}, 起点({}, {}), 终点({}, {}), 控制点1({}, {}), 控制点2({}, {})",
-                agvId, startX, startY, endX, endY,
-                controlX1, controlY1, controlX2, controlY2);
+    public void sendClearEmergency(String agvId) throws Ros2BusinessException {
+        ClearEmergencyMessage clearMsg = messageFactory.createClearEmergency(agvId);
+        sendMessage(clearMsg);
+        log.info("发送清除急停命令: AGV={}", agvId);
     }
 
     /**
-     * 发送多段路径命令
+     * 发送速度限制命令
+     *
+     * @param agvId    AGV ID
+     * @param maxSpeed 最大线速度 (m/s)
+     * @throws Ros2BusinessException
      */
-    public void sendMultiSegmentCommand(
-            String agvId, String commandId,
-            List<PathPointBean> pathPoints) throws Ros2BusinessException {
-
-        MoveMultiSegmentMessage multiSegmentCmd = messageFactory.createMultiSegmentPath(
-                agvId, commandId, pathPoints
-        );
-
-        sendMessage(multiSegmentCmd);
-
-        log.info("发送多段路径命令: AGV={}, 路径点数量={}", agvId, pathPoints.size());
+    public void sendSpeedLimit(String agvId, Double maxSpeed) throws Ros2BusinessException {
+        SpeedLimitMessage speedLimitMsg = messageFactory.createSpeedLimit(agvId, maxSpeed);
+        sendMessage(speedLimitMsg);
+        log.info("发送速度限制命令: AGV={}, maxSpeed={} m/s", agvId, maxSpeed);
     }
 
     /**
-     * 根据Edge发送贝塞尔曲线命令
+     * 发送速度限制命令（带角速度）
+     *
+     * @param agvId           AGV ID
+     * @param maxSpeed        最大线速度 (m/s)
+     * @param maxAngularSpeed 最大角速度 (rad/s)
+     * @throws Ros2BusinessException
      */
-    public void sendBezierCurveFromEdge(
-            String agvId, String commandId,
-            Node startNode, Node endNode,
-            Edge edge) throws Ros2BusinessException {
-
-        MoveBezierCurveMessage bezierCmd = messageFactory.createBezierCurveFromEdge(
-                agvId, commandId, startNode, endNode, edge
-        );
-
-        sendMessage(bezierCmd);
-
-        log.info("发送贝塞尔曲线命令: AGV={}, 边={}, 控制点数量={}",
-                agvId, edge.getId(),
-                edge.getControlPoints() != null ? edge.getControlPoints().size() : 0);
+    public void sendSpeedLimit(String agvId, Double maxSpeed, Double maxAngularSpeed) throws Ros2BusinessException {
+        SpeedLimitMessage speedLimitMsg = messageFactory.createSpeedLimit(agvId, maxSpeed, maxAngularSpeed);
+        sendMessage(speedLimitMsg);
+        log.info("发送速度限制命令: AGV={}, maxSpeed={} m/s, maxAngularSpeed={} rad/s",
+                agvId, maxSpeed, maxAngularSpeed);
     }
-
 
     /**
      * 发送消息到队列（核心方法）
@@ -326,6 +289,36 @@ public class Ros2WebSocketClient {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new Ros2BusinessException("1000", "消息入队被中断", e);
+        }
+    }
+
+    /**
+     * 同步发送消息并等待响应
+     *
+     * @param message 请求消息（应包含 requestId，若没有会自动生成）
+     * @param timeout 超时时间
+     * @param unit    时间单位
+     * @return 响应消息的 JSON 字符串
+     */
+    public String sendMessageSync(Ros2Message message, long timeout, TimeUnit unit)
+            throws Ros2BusinessException, TimeoutException, InterruptedException {
+        final String requestId = message.getRequestId();
+
+        // 创建 future 并注册
+        CompletableFuture<String> future = new CompletableFuture<>();
+        pendingRequests.put(requestId, future);
+
+        try {
+            // 异步发送消息（不阻塞）
+            sendMessage(message);
+            // 阻塞等待响应
+            return future.get(timeout, unit);
+        } catch (ExecutionException e) {
+            throw new Ros2BusinessException("1001", "同步调用异常: " + e.getCause().getMessage(), e);
+        } catch (TimeoutException e) {
+            throw e;
+        } finally {
+            pendingRequests.remove(requestId);
         }
     }
 
@@ -455,6 +448,17 @@ public class Ros2WebSocketClient {
         log.info("ROS2 WebSocket客户端销毁完成");
     }
 
+    private String extractRequestId(String jsonMessage) {
+        // 使用 Jackson 解析 JSON，提取 requestId 字段
+        try {
+            JsonNode node = objectMapper.readTree(jsonMessage);
+            JsonNode ridNode = node.get("requestId");
+            return ridNode != null ? ridNode.asText() : null;
+        } catch (IOException e) {
+            log.warn("解析响应消息 requestId 失败: {}", e.getMessage());
+            return null;
+        }
+    }
 
     public interface MessageListener {
         void onMessage(String message);

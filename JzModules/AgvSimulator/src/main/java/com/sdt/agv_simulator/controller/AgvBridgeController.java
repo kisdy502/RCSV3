@@ -2,6 +2,7 @@ package com.sdt.agv_simulator.controller;
 
 import com.jizhi.data.CommonResult;
 import com.jizhi.vda5050.agv.AgvStatus;
+import com.sdt.agv_simulator.agv.VirtualAgv;
 import com.sdt.agv_simulator.component.Ros2WebSocketClient;
 import com.sdt.agv_simulator.dto.*;
 import com.sdt.agv_simulator.service.AgvStatusManager;
@@ -20,6 +21,9 @@ public class AgvBridgeController {
 
     @Autowired
     private AgvStatusManager agvStatusManager;
+
+    @Autowired
+    private VirtualAgv virtualAgv;
 
     @Autowired
     private MessageFrequencyService frequencyService; // 注入频率统计服务
@@ -69,7 +73,7 @@ public class AgvBridgeController {
     @PostMapping("/control")
     public CommonResult<?> controlAgv(
             @RequestBody ControlRequest request) {
-        rosWebSocketClient.sendAgvControl(agvStatusManager.getVirtualAgv().getAgvStatus().getAgvId(),
+        rosWebSocketClient.sendNavigationControl(virtualAgv.getAgvStatus().getAgvId(),
                 request.getAction());
         return CommonResult.success("", "控制指令已发送");
     }
