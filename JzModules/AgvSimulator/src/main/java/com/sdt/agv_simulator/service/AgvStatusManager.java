@@ -354,8 +354,8 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
                 }
 
                 @Override
-                public void onMovementFailed(String cmdId, String nodeId, String status, String reason) {
-                    handleMoveFailed(status, "恢复移动失败: " + reason);
+                public void onMovementFailed(String cmdId, String nodeId, String reason) {
+                    handleMoveFailed("恢复移动失败: " + reason);
                 }
 
                 @Override
@@ -374,22 +374,22 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
     /**
      * 从断点恢复订单执行
      */
-    private void resumeOrderExecution(ExecutionSnapshot snapshot) {
-        // 启动新线程继续执行剩余订单
-        new Thread(() -> {
-            try {
-                Vda5050OrderMessage orderMessage = virtualAgv.getCurrentOrderMessage();
-                if (orderMessage == null) {
-                    log.error("无法恢复：没有找到原始订单消息");
-                    return;
-                }
-                AgvStatus agvStatus = virtualAgv.getAgvStatus();
-            } catch (Exception e) {
-                log.error("恢复订单执行失败", e);
-                handleMoveFailed("FAILED", "恢复执行异常: " + e.getMessage());
-            }
-        }).start();
-    }
+//    private void resumeOrderExecution(ExecutionSnapshot snapshot) {
+//        // 启动新线程继续执行剩余订单
+//        new Thread(() -> {
+//            try {
+//                Vda5050OrderMessage orderMessage = virtualAgv.getCurrentOrderMessage();
+//                if (orderMessage == null) {
+//                    log.error("无法恢复：没有找到原始订单消息");
+//                    return;
+//                }
+//                AgvStatus agvStatus = virtualAgv.getAgvStatus();
+//            } catch (Exception e) {
+//                log.error("恢复订单执行失败", e);
+//                handleMoveFailed("恢复执行异常: " + e.getMessage());
+//            }
+//        }).start();
+//    }
 
     /**
      * 处理路径更新
@@ -847,20 +847,12 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
 //        }).start();
 //    }
 
-    private void handleMoveFailed(String status, String message) {
-        if (Objects.equals(status, "FAILED")) {
-            virtualAgv.getAgvStatus().setOrderState(status);
-            virtualAgv.getAgvStatus().setAgvState(AgvState.ERROR);
-            agvMqttGateway.sendOrderState(virtualAgv.getAgvStatus(), virtualAgv.getAgvStatus().getCurrentOrderId(),
-                    "FAILED", virtualAgv.getAgvStatus().getOrderUpdateId(), message);
-            agvToIdle();
-        } else if (Objects.equals(status, "CANCELED")) {
-            virtualAgv.getAgvStatus().setOrderState(status);
-            virtualAgv.getAgvStatus().setAgvState(AgvState.IDLE);
-            agvMqttGateway.sendOrderState(virtualAgv.getAgvStatus(), virtualAgv.getAgvStatus().getCurrentOrderId(),
-                    "CANCELED", virtualAgv.getAgvStatus().getOrderUpdateId(), message);
-            agvToIdle();
-        }
+    private void handleMoveFailed(String message) {
+        virtualAgv.getAgvStatus().setOrderState("FAILED");
+        virtualAgv.getAgvStatus().setAgvState(AgvState.ERROR);
+        agvMqttGateway.sendOrderState(virtualAgv.getAgvStatus(), virtualAgv.getAgvStatus().getCurrentOrderId(),
+                "FAILED", virtualAgv.getAgvStatus().getOrderUpdateId(), message);
+        agvToIdle();
     }
 
 

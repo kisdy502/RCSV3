@@ -65,7 +65,7 @@ public class MovementManager {
             log.error("发送移动命令失败", e);
             currentContext.getFuture().completeExceptionally(e);
             if (callback != null) {
-                callback.onMovementFailed(commandId, targetNode.getId(), "FAILED","发送命令失败: " + e.getMessage());
+                callback.onMovementFailed(commandId, targetNode.getId(), "发送命令失败: " + e.getMessage());
             }
             cleanup();
         }
@@ -88,7 +88,7 @@ public class MovementManager {
                     }
 
                     @Override
-                    public void onMovementFailed(String cmdId, String nodeId,String status, String reason) {
+                    public void onMovementFailed(String cmdId, String nodeId, String reason) {
                         future.completeExceptionally(new MovementException(reason));
                     }
 
@@ -154,15 +154,16 @@ public class MovementManager {
                 cleanup();
                 break;
             case "FAILED":
-            case "CANCELLED":
                 clearRedisTimeout(commandId);
                 if (!ctx.getFuture().isDone()) {
                     ctx.getFuture().complete(false);
                 }
                 if (ctx.getCallback() != null) {
-                    ctx.getCallback().onMovementFailed(commandId, nodeId,status, message);
+                    ctx.getCallback().onMovementFailed(commandId, nodeId, message);
                 }
                 cleanup();
+                break;
+            case "CANCELLED":
                 break;
             case "PAUSED":  // ROS2确认暂停
                 log.info("移动命令已暂停(ROS2确认): commandId={}", commandId);
@@ -255,7 +256,7 @@ public class MovementManager {
             log.error("发送恢复移动命令失败", e);
             currentContext.getFuture().completeExceptionally(e);
             if (callback != null) {
-                callback.onMovementFailed(commandId, pauseState.getTargetNode().getId(),"FAILED",
+                callback.onMovementFailed(commandId, pauseState.getTargetNode().getId(),
                         "发送命令失败: " + e.getMessage());
             }
             cleanup();
