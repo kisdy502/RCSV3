@@ -349,6 +349,15 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
             movementManager.resumeMovement(agvId, snapshot.getMovementPauseState(), new MovementResultCallback() {
                 @Override
                 public void onMovementSuccess(String cmdId, String nodeId, Node node) {
+                    // 【关键】更新 AGV 状态到目标节点
+                    virtualAgv.handleArrivedNode(node);
+
+                    // 【关键】更新快照中的节点索引为下一个节点
+                    int nextNodeIndex = snapshot.getCurrentNodeIndex() + 1;
+                    snapshot.setCurrentNodeIndex(nextNodeIndex);
+
+                    log.info("恢复移动完成，更新到节点{}，下一步从索引{}继续",
+                            nodeId, nextNodeIndex);
                     // 恢复后继续执行剩余订单
                     orderExecutor.resumeFromSnapshot(snapshot, virtualAgv.getCurrentOrderMessage());
                 }

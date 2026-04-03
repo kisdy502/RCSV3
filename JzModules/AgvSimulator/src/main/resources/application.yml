@@ -7,7 +7,7 @@ server:
 # 数据源配置
 spring:
   profiles:
-    active: test
+    active: dev
   web:
     resources:
       static-locations: classpath:/static/,classpath:/views/,classpath:/templates/
