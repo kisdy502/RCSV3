@@ -181,6 +181,18 @@ public class Ros2WebSocketClient {
     }
 
     /**
+     * 发送停止移动命令 - 用于暂停时停止当前移动
+     * 注意：这不是暂停接口，上位机控制暂停/恢复逻辑，ROS2只需停止/开始移动
+     */
+    public void sendStopMoveCommand(String agvId) throws Ros2BusinessException {
+        // 使用现有的导航控制命令，但明确是停止移动
+        // 或者创建专门的 StopMovementMessage
+        StopMoveMessage stopMsg = messageFactory.createStopMovement(agvId);
+        sendMessage(stopMsg);
+//        log.info("发送停止移动命令: AGV={}", agvId);
+    }
+
+    /**
      * 发送初始位置设置
      */
     public void sendInitialPose(String agvId, double x, double y, double theta)

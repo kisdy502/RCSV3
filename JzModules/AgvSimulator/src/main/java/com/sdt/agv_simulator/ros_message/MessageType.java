@@ -13,6 +13,8 @@ public enum MessageType {
     // 移动命令
     MOVE_TO("move_to"),
 
+    STOP_MOVE("stop_move"),
+
     // 初始位姿
     SET_INITIAL_POSE("set_initial_pose"),
 

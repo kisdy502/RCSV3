@@ -245,7 +245,7 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
                     break;
                 case "CANCEL":
                     // 1. 发送取消指令给ROS2
-                    ros2WebSocketClient.sendNavigationControl(agvId, "CANCEL");
+                    ros2WebSocketClient.sendStopMoveCommand(agvId);
                     // 2. 取消当前移动任务
                     movementManager.cancelCurrentMovement("调度取消任务");
                     // 3. 更新本地状态
@@ -303,8 +303,7 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
         } catch (Ros2BusinessException e) {
             log.error("发送控制命令到ROS2失败: command={}, error={}", command, e.getMessage());
             // 发送错误状态
-            agvMqttGateway.sendError(agvStatus, "CONTROL_ERROR",
-                    "控制命令执行失败: " + e.getMessage());
+            agvMqttGateway.sendError(agvStatus, "CONTROL_ERROR", "控制命令执行失败: " + e.getMessage());
         }
     }
 
@@ -319,17 +318,20 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
         MovementPauseState pauseState = movementManager.pauseMovement("用户暂停");
         if (snapshot != null && pauseState != null) {
             snapshot.setMovementPauseState(pauseState);
+            //TODO 同步获取停止结果，成功了才能修改上位机状态
+            ros2WebSocketClient.sendStopMoveCommand(agvId);
         }
 
         // 暂停动作
         if (actionManager.getCurrentContext() != null) {
+            //TODO 仿真环境，可以先不管
             snapshot.setActionState(actionManager.pauseCurrentAction());
         }
 
         // 更新状态
         virtualAgv.pauseOrder();
-        agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(),
-                "PAUSED", agvStatus.getOrderUpdateId(), "订单已暂停");
+        agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(), "PAUSED",
+                agvStatus.getOrderUpdateId(), "订单已暂停");
     }
 
     /**
@@ -344,29 +346,29 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
 
         // 恢复移动
         if (snapshot.getMovementPauseState() != null) {
-            movementManager.resumeMovement(agvId, snapshot.getMovementPauseState(),
-                    new MovementResultCallback() {
-                        @Override
-                        public void onMovementSuccess(String cmdId, String nodeId, Node node) {
-                            // 恢复后继续执行剩余订单
-                            orderExecutor.resumeFromSnapshot(snapshot, virtualAgv.getCurrentOrderMessage());
-                        }
+            movementManager.resumeMovement(agvId, snapshot.getMovementPauseState(), new MovementResultCallback() {
+                @Override
+                public void onMovementSuccess(String cmdId, String nodeId, Node node) {
+                    // 恢复后继续执行剩余订单
+                    orderExecutor.resumeFromSnapshot(snapshot, virtualAgv.getCurrentOrderMessage());
+                }
 
-                        @Override
-                        public void onMovementFailed(String cmdId, String nodeId, String reason) {
-                            handleMoveFailed("恢复移动失败: " + reason);
-                        }
+                @Override
+                public void onMovementFailed(String cmdId, String nodeId, String status, String reason) {
+                    handleMoveFailed(status, "恢复移动失败: " + reason);
+                }
 
-                        @Override
-                        public void onMovementStateChanged(String cmdId, String nodeId, String state) {
-                        }
-                    });
+                @Override
+                public void onMovementStateChanged(String cmdId, String nodeId, String state) {
+                }
+            });
+            agvStatus.setAgvState(AgvState.MOVING);
         }
 
         // 更新状态
-//        agvStatus.setAgvState(AgvState.MOVING);
-        agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(),
-                "RUNNING", agvStatus.getOrderUpdateId(), "订单已恢复");
+        //
+        agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(), "RUNNING",
+                agvStatus.getOrderUpdateId(), "订单已恢复");
     }
 
     /**
@@ -384,7 +386,7 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
                 AgvStatus agvStatus = virtualAgv.getAgvStatus();
             } catch (Exception e) {
                 log.error("恢复订单执行失败", e);
-                handleMoveFailed("恢复执行异常: " + e.getMessage());
+                handleMoveFailed("FAILED", "恢复执行异常: " + e.getMessage());
             }
         }).start();
     }
@@ -541,14 +543,12 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
         if (currentPos != null) {
             // 获取新旧时间戳（优先纳秒）
             long newTime = dto.getTimestampNs() > 0 ? dto.getTimestampNs() : dto.getTimestamp();
-            long oldTime = currentPos.getTimestampNs() != null && currentPos.getTimestampNs() > 0
-                    ? currentPos.getTimestampNs()
-                    : currentPos.getTimestamp();
+            long oldTime = currentPos.getTimestampNs() != null && currentPos.getTimestampNs() > 0 ?
+                    currentPos.getTimestampNs() : currentPos.getTimestamp();
 
             if (newTime <= oldTime) {
-                log.debug("丢弃旧位置更新: 新时间戳={}, 当前时间戳={} (使用{}级比较)",
-                        newTime, oldTime,
-                        (dto.getTimestampNs() > 0 ? "纳秒" : "毫秒"));
+                log.debug("丢弃旧位置更新: 新时间戳={}, 当前时间戳={} (使用{}级比较)", newTime, oldTime, (dto.getTimestampNs() > 0 ? "纳秒"
+                        : "毫秒"));
                 return;
             }
 
@@ -847,12 +847,20 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
 //        }).start();
 //    }
 
-    private void handleMoveFailed(String message) {
-        virtualAgv.getAgvStatus().setOrderState("FAILED");
-        virtualAgv.getAgvStatus().setAgvState(AgvState.ERROR);
-        agvMqttGateway.sendOrderState(virtualAgv.getAgvStatus(), virtualAgv.getAgvStatus().getCurrentOrderId(),
-                "FAILED", virtualAgv.getAgvStatus().getOrderUpdateId(), message);
-        agvToIdle();
+    private void handleMoveFailed(String status, String message) {
+        if (Objects.equals(status, "FAILED")) {
+            virtualAgv.getAgvStatus().setOrderState(status);
+            virtualAgv.getAgvStatus().setAgvState(AgvState.ERROR);
+            agvMqttGateway.sendOrderState(virtualAgv.getAgvStatus(), virtualAgv.getAgvStatus().getCurrentOrderId(),
+                    "FAILED", virtualAgv.getAgvStatus().getOrderUpdateId(), message);
+            agvToIdle();
+        } else if (Objects.equals(status, "CANCELED")) {
+            virtualAgv.getAgvStatus().setOrderState(status);
+            virtualAgv.getAgvStatus().setAgvState(AgvState.IDLE);
+            agvMqttGateway.sendOrderState(virtualAgv.getAgvStatus(), virtualAgv.getAgvStatus().getCurrentOrderId(),
+                    "CANCELED", virtualAgv.getAgvStatus().getOrderUpdateId(), message);
+            agvToIdle();
+        }
     }
 
 

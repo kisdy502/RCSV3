@@ -70,11 +70,11 @@ public class AgvBridgeController {
         return CommonResult.success(dto, "移动控制指令已发送");
     }
 
-    @PostMapping("/control")
-    public CommonResult<?> controlAgv(
-            @RequestBody ControlRequest request) {
-        rosWebSocketClient.sendNavigationControl(virtualAgv.getAgvStatus().getAgvId(),
-                request.getAction());
-        return CommonResult.success("", "控制指令已发送");
-    }
+//    @PostMapping("/control")
+//    public CommonResult<?> controlAgv(
+//            @RequestBody ControlRequest request) {
+//        rosWebSocketClient.sendNavigationControl(virtualAgv.getAgvStatus().getAgvId(),
+//                request.getAction());
+//        return CommonResult.success("", "控制指令已发送");
+//    }
 }

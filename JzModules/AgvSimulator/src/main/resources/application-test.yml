@@ -95,6 +95,7 @@ logging:
     org.springframework.web.reactive.result.method.annotation.RequestMappingHandlerMapping: WARN
     com.zaxxer.hikari: WARN
     com.zaxxer.hikari.pool: WARN
+    org.redisson.command: WARN
   file:
     path: ./external/logs
     name: application-simulator

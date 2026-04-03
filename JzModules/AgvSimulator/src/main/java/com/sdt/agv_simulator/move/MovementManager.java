@@ -65,7 +65,7 @@ public class MovementManager {
             log.error("发送移动命令失败", e);
             currentContext.getFuture().completeExceptionally(e);
             if (callback != null) {
-                callback.onMovementFailed(commandId, targetNode.getId(), "发送命令失败: " + e.getMessage());
+                callback.onMovementFailed(commandId, targetNode.getId(), "FAILED","发送命令失败: " + e.getMessage());
             }
             cleanup();
         }
@@ -88,7 +88,7 @@ public class MovementManager {
                     }
 
                     @Override
-                    public void onMovementFailed(String cmdId, String nodeId, String reason) {
+                    public void onMovementFailed(String cmdId, String nodeId,String status, String reason) {
                         future.completeExceptionally(new MovementException(reason));
                     }
 
@@ -160,7 +160,7 @@ public class MovementManager {
                     ctx.getFuture().complete(false);
                 }
                 if (ctx.getCallback() != null) {
-                    ctx.getCallback().onMovementFailed(commandId, nodeId, message);
+                    ctx.getCallback().onMovementFailed(commandId, nodeId,status, message);
                 }
                 cleanup();
                 break;
@@ -194,13 +194,23 @@ public class MovementManager {
                 System.currentTimeMillis() - currentContext.getStartTime()
         );
         currentContext.setStatus("PAUSED");
-
         log.info("移动已暂停: commandId={}, reason={}", currentContext.getCommandId(), reason);
+
+        // 【关键】取消当前的 Future（真正的暂停）
+        if (!currentContext.getFuture().isDone()) {
+            currentContext.getFuture().cancel(true);
+            log.info("移动任务已取消: commandId={}", currentContext.getCommandId());
+        }
+        // 清理当前上下文（因为已经取消了）
+        cleanup();
+
+
         return pauseState;
     }
 
     /**
      * 恢复移动（从暂停点继续）
+     * 【关键】直接创建新上下文，不调用 executeMovement（避免取消自己）
      */
     public synchronized String resumeMovement(String agvId,
                                               MovementPauseState pauseState,
@@ -209,18 +219,49 @@ public class MovementManager {
             throw new IllegalArgumentException("暂停状态不能为空");
         }
 
+        // 确保没有正在进行的任务
+        if (currentContext != null && !currentContext.getFuture().isDone()) {
+            log.warn("恢复移动时发现有进行中的任务，先取消: commandId={}", currentContext.getCommandId());
+            cancelCurrentMovement("恢复前清理");
+        }
+
         log.info("恢复移动: 原commandId={}, 从节点{}继续",
                 pauseState.getCommandId(), pauseState.getTargetNode().getId());
 
-        // 清除旧的暂停状态
+        // 清除暂停状态
         this.pauseState = null;
 
-        // 恢复就是重新执行到原目标点的移动
-        // 注意：这里可以选择：
-        // 1. 重新执行原命令（当前实现）
-        // 2. 创建新命令ID，但标记为恢复（如果需要区分）
-        return executeMovement(agvId, pauseState.getTargetNode(),
+        // 【关键】直接创建新的移动上下文，不复用 executeMovement
+        String commandId = generateCommandId();
+        currentContext = new MovementContext(commandId, pauseState.getTargetNode(),
                 pauseState.getPassedEdge(), pauseState.isWasEnd(), callback);
+
+        // 发送到ROS2
+        try {
+            ros2WebSocketClient.sendMoveCommand(agvId, commandId,
+                    pauseState.getTargetNode(),
+                    pauseState.getPassedEdge(),
+                    pauseState.isWasEnd());
+
+            currentContext.setStatus("PENDING");
+            setRedisTimeout(commandId);
+
+            log.info("恢复移动任务启动: commandId={}, 目标({}, {})",
+                    commandId,
+                    pauseState.getTargetNode().getX(),
+                    pauseState.getTargetNode().getY());
+
+        } catch (Exception e) {
+            log.error("发送恢复移动命令失败", e);
+            currentContext.getFuture().completeExceptionally(e);
+            if (callback != null) {
+                callback.onMovementFailed(commandId, pauseState.getTargetNode().getId(),"FAILED",
+                        "发送命令失败: " + e.getMessage());
+            }
+            cleanup();
+        }
+
+        return commandId;
     }
 
     /**
@@ -234,13 +275,13 @@ public class MovementManager {
             boolean cancelled = currentContext.getFuture().cancel(true);
             log.debug("Future取消结果: {}", cancelled);
 
-            if (currentContext.getCallback() != null) {
-                currentContext.getCallback().onMovementFailed(
-                        currentContext.getCommandId(),
-                        currentContext.getTargetNode().getId(),
-                        "取消: " + reason
-                );
-            }
+//            if (currentContext.getCallback() != null) {
+//                currentContext.getCallback().onMovementFailed(
+//                        currentContext.getCommandId(),
+//                        currentContext.getTargetNode().getId(),"CANCEL",
+//                        "取消: " + reason
+//                );
+//            }
         }
         cleanup();
     }
@@ -340,13 +381,13 @@ public class MovementManager {
                             new RuntimeException("移动超时，未收到状态更新"));
                 }
 
-                if (currentContext.getCallback() != null) {
-                    currentContext.getCallback().onMovementFailed(
-                            currentContext.getCommandId(),
-                            currentContext.getTargetNode().getId(),
-                            "移动超时，未收到状态更新"
-                    );
-                }
+//                if (currentContext.getCallback() != null) {
+//                    currentContext.getCallback().onMovementFailed(
+//                            currentContext.getCommandId(),
+//                            currentContext.getTargetNode().getId(),
+//                            "移动超时，未收到状态更新"
+//                    );
+//                }
 
                 cleanup();
             }

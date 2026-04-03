@@ -14,7 +14,7 @@ public interface MovementResultCallback {
     /**
      * 移动失败
      */
-    void onMovementFailed(String commandId, String nodeId, String reason);
+    void onMovementFailed(String commandId, String nodeId, String status,String reason);
 
     /**
      * 移动状态变更（ACCEPTED/EXECUTING等）

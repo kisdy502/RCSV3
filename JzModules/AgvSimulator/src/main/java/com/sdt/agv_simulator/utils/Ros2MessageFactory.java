@@ -47,7 +47,7 @@ public class Ros2MessageFactory {
     /**
      * 创建移动命令消息
      */
-    public MoveToMessage createMoveCommand(String agvId, String commandId, Node node,Edge passedEdge,boolean isEnd) {
+    public MoveToMessage createMoveCommand(String agvId, String commandId, Node node, Edge passedEdge, boolean isEnd) {
         MoveToMessage message = new MoveToMessage(generateRequestId("move"));
         message.setAgvId(agvId);
         message.setCommandId(commandId);
@@ -57,6 +57,11 @@ public class Ros2MessageFactory {
         message.setTheta(node.getTheta());
         message.setEdgeInfo(passedEdge);
         message.setEndPoint(isEnd);
+        return message;
+    }
+
+    public StopMoveMessage createStopMovement(String agvId) {
+        StopMoveMessage message = new StopMoveMessage(generateRequestId("stop_move"), agvId);
         return message;
     }
 
@@ -112,7 +117,8 @@ public class Ros2MessageFactory {
 
     /**
      * 创建速度限制命令
-     * @param agvId AGV ID
+     *
+     * @param agvId    AGV ID
      * @param maxSpeed 最大线速度 (m/s)
      * @return SpeedLimitMessage
      */
@@ -129,8 +135,9 @@ public class Ros2MessageFactory {
 
     /**
      * 创建速度限制命令（带角速度）
-     * @param agvId AGV ID
-     * @param maxSpeed 最大线速度 (m/s)
+     *
+     * @param agvId           AGV ID
+     * @param maxSpeed        最大线速度 (m/s)
      * @param maxAngularSpeed 最大角速度 (rad/s)
      * @return SpeedLimitMessage
      */
@@ -143,13 +150,6 @@ public class Ros2MessageFactory {
         msg.setMaxAngularSpeed(maxAngularSpeed);
         return msg;
     }
-
-
-
-
-
-
-
 
 
 }
