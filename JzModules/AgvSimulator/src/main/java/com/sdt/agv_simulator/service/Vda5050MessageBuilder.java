@@ -1,6 +1,7 @@
 package com.sdt.agv_simulator.service;
 
 import com.jizhi.vda5050.agv.AgvActionState;
+import com.jizhi.vda5050.agv.AgvState;
 import com.jizhi.vda5050.agv.AgvStatus;
 import com.jizhi.vda5050.agv.TaskStatus;
 import com.jizhi.vda5050.domain.*;
@@ -26,9 +27,6 @@ public class Vda5050MessageBuilder {
 
     @Autowired
     private MapService mapService;
-
-
-
 
 
     /**
@@ -314,7 +312,7 @@ public class Vda5050MessageBuilder {
         Vda5050StateMessage.AgvState agvState5050 = new Vda5050StateMessage.AgvState();
         agvState5050.setAgvState(agvStatus.getAgvState().getValue());
         agvState5050.setOperationMode(agvStatus.getOperationMode().getValue());
-        agvState5050.setPaused(agvStatus.getPaused());
+        agvState5050.setPaused(agvStatus.getAgvState() == AgvState.PAUSED);
         agvState5050.setEmergencyStop(agvStatus.getEmergencyStop());
         agvState5050.setBatteryState(agvStatus.getBatteryState().getValue());
         agvState5050.setSafetyState(agvStatus.getSafetyState());

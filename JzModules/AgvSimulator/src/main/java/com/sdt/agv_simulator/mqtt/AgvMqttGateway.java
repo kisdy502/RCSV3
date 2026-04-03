@@ -440,8 +440,8 @@ public class AgvMqttGateway implements MqttCallback, ApplicationListener<Context
             String jsonMessage = objectMapper.writeValueAsString(heartbeatMessage);
             publish(topic, jsonMessage);
 
-            log.debug("发送VDA5050心跳: agv={}, battery={}, state={}",
-                    agvStatus.getAgvId(), agvStatus.getBatteryLevel(), agvStatus.getAgvState());
+//            log.debug("发送VDA5050心跳: agv={}, battery={}, state={}",
+//                    agvStatus.getAgvId(), agvStatus.getBatteryLevel(), agvStatus.getAgvState());
 
         } catch (Exception e) {
             log.error("发送心跳失败", e);

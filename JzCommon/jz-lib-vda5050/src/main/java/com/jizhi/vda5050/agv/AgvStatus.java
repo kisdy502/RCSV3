@@ -37,7 +37,6 @@ public class AgvStatus {
     private BatteryState batteryState;       // 电池状态
     private OperationMode operationMode;     // 操作模式
     private Boolean enabled;                 // 是否启用
-    private Boolean paused;                  // 是否暂停
 
     // 电池信息
     private Double batteryLevel = 0.0;             // 电池电量 (0-100)
@@ -118,7 +117,7 @@ public class AgvStatus {
         this.batteryState = BatteryState.UNKNOWN;
         this.operationMode = OperationMode.AUTOMATIC;
         this.enabled = true;
-        this.paused = false;
+//        this.paused = false;
         this.batteryLevel = 100.0;
         this.velocity = 0.0;
         this.connected = true;
@@ -269,7 +268,7 @@ public class AgvStatus {
                     BatteryState.fromValue(agvState.getBatteryState()) : this.batteryState;
             this.operationMode = agvState.getOperationMode() != null ?
                     OperationMode.fromValue(agvState.getOperationMode()) : this.operationMode;
-            this.paused = agvState.getPaused() != null ? agvState.getPaused() : this.paused;
+//            this.paused = agvState.getPaused() != null ? agvState.getPaused() : this.paused;
             this.emergencyStop = agvState.getEmergencyStop() != null ? agvState.getEmergencyStop() : this.emergencyStop;
             this.safetyState = agvState.getSafetyState() != null ? agvState.getSafetyState() : this.safetyState;
         }

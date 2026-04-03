@@ -25,9 +25,14 @@ import com.sdt.agv_simulator.dto.AgvStatusDto;
 import com.sdt.agv_simulator.dto.CommandAckDto;
 import com.sdt.agv_simulator.dto.LaserScanDto;
 import com.sdt.agv_simulator.dto.PositionUpdateDto;
+import com.sdt.agv_simulator.move.MovementManager;
+import com.sdt.agv_simulator.move.MovementPauseState;
+import com.sdt.agv_simulator.move.MovementResultCallback;
 import com.sdt.agv_simulator.mqtt.AgvMqttGateway;
 import com.sdt.agv_simulator.mqtt.IMqttConnectListener;
 import com.sdt.agv_simulator.mqtt.IMqttMessageHandler;
+import com.sdt.agv_simulator.task.ActionManager;
+import com.sdt.agv_simulator.task.OrderExecutor;
 import jakarta.annotation.PreDestroy;
 import lombok.Getter;
 import lombok.Setter;
@@ -63,6 +68,9 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
 
     @Autowired
     private ActionManager actionManager;
+
+    @Autowired
+    private OrderExecutor orderExecutor;
 
     @Autowired
     private VirtualAgv virtualAgv;
@@ -150,22 +158,22 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
     }
 
     /**
-     * 处理VDA5050订单
+     * 处理VDA5050订单 - 现在只需交给 OrderExecutor
      */
     public void processVda5050Order(Vda5050OrderMessage orderMessage) {
         try {
-            log.info("处理VDA5050订单: orderId={}, nodes={}, edges={}", orderMessage.getOrderInformation().getOrderId(),
-                    orderMessage.getNodePositions().size(), orderMessage.getEdges().size());
-
+            log.info("处理VDA5050订单: orderId={}", orderMessage.getOrderInformation().getOrderId());
+            virtualAgv.setCurrentOrderMessage(orderMessage);
             AgvStatus agvStatus = virtualAgv.getAgvStatus();
-            // 更新AGV订单信息
             agvStatus.updateFromVda5050OrderMessage(orderMessage);
             agvStatus.setOrderState("ACCEPTED");
-            // 发送订单接受状态
+
+            // 发送接受确认
             agvMqttGateway.sendOrderState(agvStatus, orderMessage.getOrderInformation().getOrderId(), "ACCEPTED",
                     orderMessage.getOrderInformation().getOrderUpdateId(), "订单已接受");
-            // 真实处理订单
-            processRealOrder(orderMessage);
+            // 交给执行器
+            orderExecutor.executeOrder(orderMessage);
+
         } catch (Exception e) {
             log.error("处理VDA5050订单失败", e);
         }
@@ -229,17 +237,17 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
                     handlePauseCommand(agvId, agvStatus);
                     break;
                 case "RESUME":
-                    if (agvStatus.getAgvState() == AgvState.PAUSED) {
+                    if (agvStatus.getAgvState() != AgvState.PAUSED) {
                         log.info("AGV未处于暂停状态，无需恢复");
                         return;
                     }
-                    handleResumeCommand(agvId,agvStatus);
+                    handleResumeCommand(agvId, agvStatus);
                     break;
                 case "CANCEL":
                     // 1. 发送取消指令给ROS2
                     ros2WebSocketClient.sendNavigationControl(agvId, "CANCEL");
                     // 2. 取消当前移动任务
-                    movementManager.cancelCurrentMovement();
+                    movementManager.cancelCurrentMovement("调度取消任务");
                     // 3. 更新本地状态
                     virtualAgv.cancelOrder();
                     agvStatus.setOrderState("CANCELLED");
@@ -252,7 +260,7 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
                     // 1. 发送急停指令给ROS2
                     ros2WebSocketClient.sendEmergencyStop(agvId);
                     // 2. 立即取消当前移动任务
-                    movementManager.cancelCurrentMovement();
+                    movementManager.cancelCurrentMovement("上层应用控制急停，取消任务");
                     // 3. 更新本地状态
                     agvStatus.setEmergencyStop(true);
                     agvStatus.setAgvState(AgvState.ERROR);
@@ -303,111 +311,62 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
     /**
      * 处理暂停命令
      */
-    private void handlePauseCommand(String agvId, AgvStatus agvStatus) throws Ros2BusinessException {
-        if (agvStatus.getAgvState() == AgvState.PAUSED) {
-            log.info("AGV已经是暂停状态");
-            return;
-        }
-
-        // 1. 创建执行快照（保存完整上下文）
+    private void handlePauseCommand(String agvId, AgvStatus agvStatus) {
+        // 创建快照
         ExecutionSnapshot snapshot = virtualAgv.createPauseSnapshot("USER_PAUSE");
 
-        // 2. 停止当前移动（如果有）
-        Node currentTarget = null;
-        Edge currentEdge = null;
-        boolean wasEnd = false;
-
-        if (movementManager.getCurrentCommandId() != null) {
-            // 获取当前移动目标
-            currentTarget = new Node(); // 需要从movementManager获取
-            currentEdge = new Edge();   // 需要从movementManager获取
-            wasEnd = false; // 需要判断是否是最后一个点
-
-            movementManager.pauseCurrentMovement(currentTarget, currentEdge, wasEnd);
+        // 暂停移动
+        MovementPauseState pauseState = movementManager.pauseMovement("用户暂停");
+        if (snapshot != null && pauseState != null) {
+            snapshot.setMovementPauseState(pauseState);
         }
 
-        // 3. 暂停当前动作（如果在执行）
-        ExecutionSnapshot.ActionExecutionState actionState = null;
-        if (actionManager.getCurrentAction() != null) {
-            actionState = actionManager.pauseCurrentAction();
-            if (snapshot != null) {
-                snapshot.setActionState(actionState);
-            }
+        // 暂停动作
+        if (actionManager.getCurrentContext() != null) {
+            snapshot.setActionState(actionManager.pauseCurrentAction());
         }
 
-        // 4. 发送暂停命令到ROS2
-        ros2WebSocketClient.sendNavigationControl(agvId, "PAUSE");
-
-        // 5. 更新AGV状态
-        virtualAgv.pauseOrder();  // 设置暂停标志
-        agvStatus.setPaused(true);
-        agvStatus.setAgvState(AgvState.PAUSED);
-
-        // 6. 发送MQTT状态更新
-        agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(), "PAUSED",
-                agvStatus.getOrderUpdateId(), "订单已暂停，节点索引=" +
-                        (snapshot != null ? snapshot.getCurrentNodeIndex() : "unknown"));
-
-        log.info("AGV {} 已暂停: 订单={}, 节点索引={}, 动作={}",
-                agvId, agvStatus.getCurrentOrderId(),
-                snapshot != null ? snapshot.getCurrentNodeIndex() : "N/A",
-                actionState != null ? actionState.getActionType() : "无");
+        // 更新状态
+        virtualAgv.pauseOrder();
+        agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(),
+                "PAUSED", agvStatus.getOrderUpdateId(), "订单已暂停");
     }
 
     /**
      * 处理恢复命令
      */
-    private void handleResumeCommand(String agvId, AgvStatus agvStatus) throws Ros2BusinessException {
-        if (agvStatus.getAgvState() != AgvState.PAUSED) {
-            log.warn("AGV不是暂停状态，无法恢复");
-            return;
-        }
-
-        // 1. 获取暂停快照
+    private void handleResumeCommand(String agvId, AgvStatus agvStatus) {
         ExecutionSnapshot snapshot = virtualAgv.getPauseSnapshot();
         if (snapshot == null) {
-            log.error("没有找到暂停快照，无法恢复");
+            log.error("没有找到暂停快照");
             return;
         }
 
-        // 2. 恢复动作（如果有暂停的动作）
-        if (snapshot.getActionState() != null) {
-            boolean actionResumed = actionManager.resumeAction(snapshot.getActionState());
-            if (!actionResumed) {
-                log.warn("动作恢复失败，尝试重新执行动作");
-                // 可以选择重新执行动作或跳过
-            }
+        // 恢复移动
+        if (snapshot.getMovementPauseState() != null) {
+            movementManager.resumeMovement(agvId, snapshot.getMovementPauseState(),
+                    new MovementResultCallback() {
+                        @Override
+                        public void onMovementSuccess(String cmdId, String nodeId, Node node) {
+                            // 恢复后继续执行剩余订单
+                            orderExecutor.resumeFromSnapshot(snapshot, virtualAgv.getCurrentOrderMessage());
+                        }
+
+                        @Override
+                        public void onMovementFailed(String cmdId, String nodeId, String reason) {
+                            handleMoveFailed("恢复移动失败: " + reason);
+                        }
+
+                        @Override
+                        public void onMovementStateChanged(String cmdId, String nodeId, String state) {
+                        }
+                    });
         }
 
-        // 3. 恢复移动
-        // 需要从暂停时的位置继续
-        Node resumeFromNode = new Node();
-        resumeFromNode.setId("paused_position");
-        resumeFromNode.setX(snapshot.getPausedX());
-        resumeFromNode.setY(snapshot.getPausedY());
-        resumeFromNode.setTheta(snapshot.getPausedTheta());
-
-        // 创建恢复任务
-        CompletableFuture<Boolean> resumeFuture = movementManager.resumeMovement(resumeFromNode);
-
-        // 4. 发送恢复命令到ROS2
-        ros2WebSocketClient.sendNavigationControl(agvId, "RESUME");
-
-        // 5. 更新AGV状态
-        virtualAgv.clearPauseState();
-        agvStatus.setPaused(false);
-        agvStatus.setAgvState(AgvState.MOVING);
-
-        // 6. 重新启动订单执行线程（从断点继续）
-        resumeOrderExecution(snapshot);
-
-        // 7. 发送MQTT状态更新
-        agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(), "RUNNING",
-                agvStatus.getOrderUpdateId(), "订单已恢复，从节点索引=" + snapshot.getCurrentNodeIndex());
-
-        log.info("AGV {} 已恢复: 从节点索引={}, 位置=({}, {})",
-                agvId, snapshot.getCurrentNodeIndex(),
-                snapshot.getPausedX(), snapshot.getPausedY());
+        // 更新状态
+//        agvStatus.setAgvState(AgvState.MOVING);
+        agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(),
+                "RUNNING", agvStatus.getOrderUpdateId(), "订单已恢复");
     }
 
     /**
@@ -637,70 +596,79 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
         return agvPosition;
     }
 
-    /**
-     * 真实的移动到目标点
-     * passedEdge 到达点位前经过的通道信息，如果是曲线通道，需要进行贝塞尔曲线拟合
-     */
-    private boolean moveToPosition(Node node, Edge passedEdge, boolean isEnd) throws Exception {
-        String commandId = "move_" + UUID.randomUUID();
-
-        log.info("开始移动到节点: {}, 目标位置({}, {}, {})", node.getId(), node.getX(), node.getY(), node.getTheta());
-
-        // 创建移动任务
-        CompletableFuture<Boolean> movementFuture = movementManager.createMovementTask(commandId, node, passedEdge);
-
-        try {
-            // 发送移动命令到ROS2
-            ros2WebSocketClient.sendMoveCommand(virtualAgv.getAgvStatus().getAgvId(), commandId, node, passedEdge,
-                    isEnd);
-
-            // 等待移动完成（阻塞当前线程）
-            return movementFuture.get();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error("移动被中断: commandId={}, 节点={}", commandId, node.getId());
-            return false;
-        } catch (ExecutionException e) {
-            log.error("移动失败: commandId={}, 节点={}, 错误: {}", commandId, node.getId(), e.getCause().getMessage(),
-                    e.getCause());
-            return false;
-        }
-    }
+//    /**
+//     * 真实的移动到目标点
+//     * passedEdge 到达点位前经过的通道信息，如果是曲线通道，需要进行贝塞尔曲线拟合
+//     */
+//    private boolean moveToPosition(Node node, Edge passedEdge, boolean isEnd) throws Exception {
+//        String commandId = "move_" + UUID.randomUUID();
+//
+//        log.info("开始移动到节点: {}, 目标位置({}, {}, {})", node.getId(), node.getX(), node.getY(), node.getTheta());
+//
+//        // 创建移动任务
+//        CompletableFuture<Boolean> movementFuture = movementManager.createMovementTask(commandId, node, passedEdge);
+//
+//        try {
+//            // 发送移动命令到ROS2
+//            ros2WebSocketClient.sendMoveCommand(virtualAgv.getAgvStatus().getAgvId(), commandId, node, passedEdge,
+//                    isEnd);
+//
+//            // 等待移动完成（阻塞当前线程）
+//            return movementFuture.get();
+//        } catch (InterruptedException e) {
+//            Thread.currentThread().interrupt();
+//            log.error("移动被中断: commandId={}, 节点={}", commandId, node.getId());
+//            return false;
+//        } catch (ExecutionException e) {
+//            log.error("移动失败: commandId={}, 节点={}, 错误: {}", commandId, node.getId(), e.getCause().getMessage(),
+//                    e.getCause());
+//            return false;
+//        }
+//    }
 
     /**
      * 处理移动结果回调
      */
     public void handleMovementResult(String commandId, String nodeId, String status, String message) {
-        movementManager.updateMovementStatus(commandId, nodeId, status, message);
-        // 更新AGV状态
+        // 转发给 MovementManager
+        movementManager.handleMovementResult(commandId, nodeId, status, message);
+        // 更新AGV状态（如果需要）
+        AgvStatus agvStatus = virtualAgv.getAgvStatus();
         if ("SUCCESS".equals(status)) {
-            // 更新位置信息
-            updatePositionFromCommand(commandId);
-            virtualAgv.getAgvStatus().setCurrentNodeId(nodeId); //到了目标点
+            agvStatus.setCurrentNodeId(nodeId);
         } else if ("FAILED".equals(status)) {
-            // 处理移动失败
-            handleMovementFailure(commandId, message);
-            virtualAgv.getAgvStatus().setAgvState(AgvState.IDLE);
-        } else if ("ACCEPTED".equals(status)) {
-            AgvStatus agvStatus = virtualAgv.getAgvStatus();
-            int currentIdx = agvStatus.getCurrentNodeIndex();  // 当前所在的节点索引（起点）
-            if (currentIdx >= 0 && currentIdx < agvStatus.getNodeSequence().size() - 1) {
-                agvStatus.setLastNodeId(agvStatus.getCurrentNodeId());
-                agvStatus.setLastNodeIndex(currentIdx);
-                agvStatus.setCurrentNodeId(null);
-                agvStatus.setCurrentNodeIndex(-1);
-                // 边序列索引通常与节点索引相同：第 i 条边连接节点 i 和 i+1
-                String edgeId = agvStatus.getEdgeSequence().get(currentIdx);
-                agvStatus.setCurrentEdgeId(edgeId);
-                agvStatus.setCurrentEdgeIndex(agvStatus.getEdgeSequence().indexOf(edgeId));
-                // nextNodeId 应该已经是路径中的下一个节点，但可重新确认
-                agvStatus.setNextNodeId(agvStatus.getNodeSequence().get(currentIdx + 1));
-                agvStatus.setAgvState(AgvState.EXECUTING);
-            } else {
-                // 异常处理：索引无效
-                log.error("无法离开节点：当前索引无效");
-            }
+            agvStatus.setAgvState(AgvState.ERROR);
         }
+//        movementManager.updateMovementStatus(commandId, nodeId, status, message);
+//        // 更新AGV状态
+//        if ("SUCCESS".equals(status)) {
+//            // 更新位置信息
+//            updatePositionFromCommand(commandId);
+//            virtualAgv.getAgvStatus().setCurrentNodeId(nodeId); //到了目标点
+//        } else if ("FAILED".equals(status)) {
+//            // 处理移动失败
+//            handleMovementFailure(commandId, message);
+//            virtualAgv.getAgvStatus().setAgvState(AgvState.IDLE);
+//        } else if ("ACCEPTED".equals(status)) {
+//            AgvStatus agvStatus = virtualAgv.getAgvStatus();
+//            int currentIdx = agvStatus.getCurrentNodeIndex();  // 当前所在的节点索引（起点）
+//            if (currentIdx >= 0 && currentIdx < agvStatus.getNodeSequence().size() - 1) {
+//                agvStatus.setLastNodeId(agvStatus.getCurrentNodeId());
+//                agvStatus.setLastNodeIndex(currentIdx);
+//                agvStatus.setCurrentNodeId(null);
+//                agvStatus.setCurrentNodeIndex(-1);
+//                // 边序列索引通常与节点索引相同：第 i 条边连接节点 i 和 i+1
+//                String edgeId = agvStatus.getEdgeSequence().get(currentIdx);
+//                agvStatus.setCurrentEdgeId(edgeId);
+//                agvStatus.setCurrentEdgeIndex(agvStatus.getEdgeSequence().indexOf(edgeId));
+//                // nextNodeId 应该已经是路径中的下一个节点，但可重新确认
+//                agvStatus.setNextNodeId(agvStatus.getNodeSequence().get(currentIdx + 1));
+//                agvStatus.setAgvState(AgvState.EXECUTING);
+//            } else {
+//                // 异常处理：索引无效
+//                log.error("无法离开节点：当前索引无效");
+//            }
+//        }
     }
 
     /**
@@ -769,115 +737,115 @@ public class AgvStatusManager implements IMqttMessageHandler, IMqttConnectListen
 //        }
     }
 
-    /**
-     * 新的订单处理流程
-     */
-    private void processRealOrder(Vda5050OrderMessage orderMessage) {
-        new Thread(() -> {
-            try {
-                AgvStatus agvStatus = virtualAgv.getAgvStatus();
-                agvStatus.setOrderState("RUNNING");
-                agvStatus.setAgvState(AgvState.MOVING);
-                // 发送订单开始状态
-                agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(), "RUNNING",
-                        agvStatus.getOrderUpdateId(), "开始执行订单");
-                for (int i = 0; i < orderMessage.getNodePositions().size(); i++) {
-
-                    Vda5050OrderMessage.NodePosition nodePosition = orderMessage.getNodePositions().get(i);
-                    // 创建目标节点
-                    Node targetNode = new Node();
-                    targetNode.setId(nodePosition.getNodeId());
-                    targetNode.setX(nodePosition.getNodeDescription().getX());
-                    targetNode.setY(nodePosition.getNodeDescription().getY());
-
-                    //判断AGV是否在起点位置,如果在起点位置，直接更新状态即可，不用执行真实移动操作
-                    if (i == 0) {
-                        boolean agvAtStartNode = vda5050MessageBuilder.calcAgvAtNode(agvStatus, targetNode);
-                        if (agvAtStartNode) {
-                            virtualAgv.handleArrivedNode(targetNode);
-                            // 发送节点完成状态
-                            if (i < orderMessage.getNodePositions().size() - 1) {
-                                agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(), "RUNNING",
-                                        agvStatus.getOrderUpdateId(), "完成节点 " + nodePosition.getNodeId());
-                            }
-                            continue;
-                        }
-                    }
-
-                    if (i == orderMessage.getNodePositions().size() - 1) {
-                        targetNode.setTheta(nodePosition.getNodeDescription().getTheta());
-                    } else {
-                        //非终点的一律视为途经点，忽略其点位设置的方向，让机器人旋转到目标点和下一个点的角度方向
-                        Vda5050OrderMessage.NodePosition nextPose = orderMessage.getNodePositions().get(i + 1);
-                        double dx = nextPose.getNodeDescription().getX() - nodePosition.getNodeDescription().getX();
-                        double dy = nextPose.getNodeDescription().getY() - nodePosition.getNodeDescription().getY();
-                        double theta = Math.atan2(dy, dx);
-                        log.debug("起点:{},结束点:{},夹角:{}", nodePosition.getNodeId(), nextPose.getNodeId(), theta);
-                        targetNode.setTheta(theta);
-                    }
-
-                    //除了第一个点，需要计算通道的旋转角度
-                    Edge edge = null;
-                    if (i > 0) {
-                        edge = mapService.getEdge(agvStatus.getEdgeSequence().get(agvStatus.getCurrentNodeIndex()));
-                        Node startNode = null;
-                        Node endNode = null;
-                        if (Objects.equals(edge.getTargetId(), targetNode.getId())) {
-                            startNode = mapService.getNode(edge.getSourceId());
-                            endNode = mapService.getNode(edge.getTargetId());
-                        } else {
-                            startNode = mapService.getNode(edge.getTargetId());
-                            endNode = mapService.getNode(edge.getSourceId());
-                        }
-
-                        double dx = endNode.getX() - startNode.getX();
-                        double dy = endNode.getY() - startNode.getY();
-                        double theta = Math.atan2(dy, dx);
-                        log.debug("重新计算，通道{}，启点{}，终点{},通道方向:{}", edge.getId(), edge.getSourceId(), edge.getTargetId()
-                                , theta);
-
-                    }
-
-                    if (edge == null) {
-                        edge = new Edge();  //用默认边
-                    }
-
-                    // 执行真实移动
-                    boolean moveSuccess = moveToPosition(targetNode, edge,
-                            i == orderMessage.getNodePositions().size() - 1);
-
-                    if (!moveSuccess) {
-                        handleMoveFailed("移动到节点 " + nodePosition.getNodeId() + " 失败");  // 移动失败，发送错误状态
-                        return;
-                    } else {
-                        virtualAgv.handleArrivedNode(targetNode);   // 移动成功，更新位置
-                    }
-
-                    // 发送节点完成状态
-                    if (i < orderMessage.getNodePositions().size() - 1) {
-                        agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(), "RUNNING",
-                                agvStatus.getOrderUpdateId(), "完成节点 " + nodePosition.getNodeId());
-                    }
-                }
-
-                agvStatus.setAgvState(AgvState.EXECUTING);
-                if (orderMessage.getActions() != null && !orderMessage.getActions().isEmpty()) {
-                    for (int i = 0; i < orderMessage.getActions().size(); i++) {
-                        Vda5050OrderMessage.Action action = orderMessage.getActions().get(i);
-                        agvStatus.setCurrentAction(action);
-                        actionManager.startAction(action);
-                    }
-                }
-
-                completeOrderSimulation();
-                agvToIdle();
-            } catch (Exception e) {
-                log.error("订单处理异常:", e);
-                // 发送错误状态
-                handleMoveFailed("订单处理异常: " + e.getMessage());
-            }
-        }).start();
-    }
+//    /**
+//     * 新的订单处理流程
+//     */
+//    private void processRealOrder(Vda5050OrderMessage orderMessage) {
+//        new Thread(() -> {
+//            try {
+//                AgvStatus agvStatus = virtualAgv.getAgvStatus();
+//                agvStatus.setOrderState("RUNNING");
+//                agvStatus.setAgvState(AgvState.MOVING);
+//                // 发送订单开始状态
+//                agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(), "RUNNING",
+//                        agvStatus.getOrderUpdateId(), "开始执行订单");
+//                for (int i = 0; i < orderMessage.getNodePositions().size(); i++) {
+//
+//                    Vda5050OrderMessage.NodePosition nodePosition = orderMessage.getNodePositions().get(i);
+//                    // 创建目标节点
+//                    Node targetNode = new Node();
+//                    targetNode.setId(nodePosition.getNodeId());
+//                    targetNode.setX(nodePosition.getNodeDescription().getX());
+//                    targetNode.setY(nodePosition.getNodeDescription().getY());
+//
+//                    //判断AGV是否在起点位置,如果在起点位置，直接更新状态即可，不用执行真实移动操作
+//                    if (i == 0) {
+//                        boolean agvAtStartNode = vda5050MessageBuilder.calcAgvAtNode(agvStatus, targetNode);
+//                        if (agvAtStartNode) {
+//                            virtualAgv.handleArrivedNode(targetNode);
+//                            // 发送节点完成状态
+//                            if (i < orderMessage.getNodePositions().size() - 1) {
+//                                agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(), "RUNNING",
+//                                        agvStatus.getOrderUpdateId(), "完成节点 " + nodePosition.getNodeId());
+//                            }
+//                            continue;
+//                        }
+//                    }
+//
+//                    if (i == orderMessage.getNodePositions().size() - 1) {
+//                        targetNode.setTheta(nodePosition.getNodeDescription().getTheta());
+//                    } else {
+//                        //非终点的一律视为途经点，忽略其点位设置的方向，让机器人旋转到目标点和下一个点的角度方向
+//                        Vda5050OrderMessage.NodePosition nextPose = orderMessage.getNodePositions().get(i + 1);
+//                        double dx = nextPose.getNodeDescription().getX() - nodePosition.getNodeDescription().getX();
+//                        double dy = nextPose.getNodeDescription().getY() - nodePosition.getNodeDescription().getY();
+//                        double theta = Math.atan2(dy, dx);
+//                        log.debug("起点:{},结束点:{},夹角:{}", nodePosition.getNodeId(), nextPose.getNodeId(), theta);
+//                        targetNode.setTheta(theta);
+//                    }
+//
+//                    //除了第一个点，需要计算通道的旋转角度
+//                    Edge edge = null;
+//                    if (i > 0) {
+//                        edge = mapService.getEdge(agvStatus.getEdgeSequence().get(agvStatus.getCurrentNodeIndex()));
+//                        Node startNode = null;
+//                        Node endNode = null;
+//                        if (Objects.equals(edge.getTargetId(), targetNode.getId())) {
+//                            startNode = mapService.getNode(edge.getSourceId());
+//                            endNode = mapService.getNode(edge.getTargetId());
+//                        } else {
+//                            startNode = mapService.getNode(edge.getTargetId());
+//                            endNode = mapService.getNode(edge.getSourceId());
+//                        }
+//
+//                        double dx = endNode.getX() - startNode.getX();
+//                        double dy = endNode.getY() - startNode.getY();
+//                        double theta = Math.atan2(dy, dx);
+//                        log.debug("重新计算，通道{}，启点{}，终点{},通道方向:{}", edge.getId(), edge.getSourceId(), edge.getTargetId()
+//                                , theta);
+//
+//                    }
+//
+//                    if (edge == null) {
+//                        edge = new Edge();  //用默认边
+//                    }
+//
+//                    // 执行真实移动
+//                    boolean moveSuccess = moveToPosition(targetNode, edge,
+//                            i == orderMessage.getNodePositions().size() - 1);
+//
+//                    if (!moveSuccess) {
+//                        handleMoveFailed("移动到节点 " + nodePosition.getNodeId() + " 失败");  // 移动失败，发送错误状态
+//                        return;
+//                    } else {
+//                        virtualAgv.handleArrivedNode(targetNode);   // 移动成功，更新位置
+//                    }
+//
+//                    // 发送节点完成状态
+//                    if (i < orderMessage.getNodePositions().size() - 1) {
+//                        agvMqttGateway.sendOrderState(agvStatus, agvStatus.getCurrentOrderId(), "RUNNING",
+//                                agvStatus.getOrderUpdateId(), "完成节点 " + nodePosition.getNodeId());
+//                    }
+//                }
+//
+//                agvStatus.setAgvState(AgvState.EXECUTING);
+//                if (orderMessage.getActions() != null && !orderMessage.getActions().isEmpty()) {
+//                    for (int i = 0; i < orderMessage.getActions().size(); i++) {
+//                        Vda5050OrderMessage.Action action = orderMessage.getActions().get(i);
+//                        agvStatus.setCurrentAction(action);
+//                        actionManager.startAction(action);
+//                    }
+//                }
+//
+//                completeOrderSimulation();
+//                agvToIdle();
+//            } catch (Exception e) {
+//                log.error("订单处理异常:", e);
+//                // 发送错误状态
+//                handleMoveFailed("订单处理异常: " + e.getMessage());
+//            }
+//        }).start();
+//    }
 
     private void handleMoveFailed(String message) {
         virtualAgv.getAgvStatus().setOrderState("FAILED");

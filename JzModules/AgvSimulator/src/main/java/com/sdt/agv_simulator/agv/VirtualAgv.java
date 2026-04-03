@@ -41,9 +41,6 @@ public class VirtualAgv {
     @Getter
     private volatile Vda5050OrderMessage currentOrderMessage;
 
-    // 暂停状态标志
-    private final AtomicBoolean isPaused = new AtomicBoolean(false);
-
     // 执行上下文快照
     private final AtomicReference<ExecutionSnapshot> executionSnapshot = new AtomicReference<>();
 
@@ -133,7 +130,6 @@ public class VirtualAgv {
      */
     public void pauseOrder() {
         agvStatus.setAgvState(AgvState.PAUSED);
-        agvStatus.setPaused(true);
         agvStatus.setLastStateChange(LocalDateTime.now());
     }
 
@@ -142,7 +138,6 @@ public class VirtualAgv {
      */
     public void resumeOrder() {
         agvStatus.setAgvState(AgvState.MOVING);
-        agvStatus.setPaused(false);
         agvStatus.setLastStateChange(LocalDateTime.now());
     }
 
@@ -211,36 +206,25 @@ public class VirtualAgv {
                     .actionId(agvStatus.getCurrentAction().getActionId())
                     .actionType(agvStatus.getCurrentAction().getActionType())
                     .status("PAUSED")
-                    .progressPercent(calculateActionProgress()) // 需要实现
-                    .actionContext(captureActionContext())      // 需要实现
+                    .progress(calculateActionProgress()) // 需要实现
                     .build();
         }
 
         ExecutionSnapshot snapshot = ExecutionSnapshot.builder()
                 .orderId(agvStatus.getCurrentOrderId())
-                .orderUpdateId(agvStatus.getOrderUpdateId())
                 .currentNodeIndex(agvStatus.getCurrentNodeIndex())
-                .currentEdgeIndex(agvStatus.getCurrentEdgeIndex())
-                .currentNodeId(agvStatus.getCurrentNodeId())
-                .nextNodeId(agvStatus.getNextNodeId())
                 .pausedX(agvStatus.getCurrentPosition() != null ? agvStatus.getCurrentPosition().getX() : null)
                 .pausedY(agvStatus.getCurrentPosition() != null ? agvStatus.getCurrentPosition().getY() : null)
                 .pausedTheta(agvStatus.getCurrentPosition() != null ? agvStatus.getCurrentPosition().getTheta() : null)
-                .distanceSinceLastNode(agvStatus.getDistanceSinceLastNode())
                 .actionState(actionState)
-                .currentActionId(agvStatus.getCurrentAction().getActionId())
-                .currentActionType(agvStatus.getCurrentAction().getActionType())
-                .pausedTime(LocalDateTime.now())
-                .pausedTimestampNs(System.nanoTime())
                 .pauseReason(pauseReason)
                 .build();
 
         executionSnapshot.set(snapshot);
-        isPaused.set(true);
 
         log.info("AGV {} 创建暂停快照: 节点索引={}, 动作={}, 原因={}",
                 agvStatus.getAgvId(), snapshot.getCurrentNodeIndex(),
-                snapshot.getCurrentActionType(), pauseReason);
+                snapshot.getActionState(), pauseReason);
 
         return snapshot;
     }
@@ -260,22 +244,6 @@ public class VirtualAgv {
      */
     public ExecutionSnapshot getPauseSnapshot() {
         return executionSnapshot.get();
-    }
-
-    /**
-     * 检查是否处于暂停状态
-     */
-    public boolean isPaused() {
-        return isPaused.get();
-    }
-
-
-    /**
-     * 清除暂停状态
-     */
-    public void clearPauseState() {
-        isPaused.set(false);
-        // 保留快照直到订单完成，用于可能的故障恢复
     }
 
     // 订单行动

@@ -178,9 +178,6 @@ public class Ros2WebSocketClient {
             throws Ros2BusinessException {
         MoveToMessage moveCommand = messageFactory.createMoveCommand(agvId, commandId, node, passedEdge, isEnd);
         sendMessage(moveCommand);
-
-        log.info("发送移动命令: AGV={}, 命令ID={}, 目标({}, {}, {})", agvId, commandId, node.getX(), node.getY(),
-                node.getTheta());
     }
 
     /**
@@ -352,8 +349,8 @@ public class Ros2WebSocketClient {
                 if (session != null && session.isOpen()) {
                     String content = objectMapper.writeValueAsString(message);
                     session.sendMessage(new TextMessage(content));
-                    log.debug("消息已发送: {}", content.length() > 512 ?
-                            content.substring(0, 512) + "..." : content);
+                    log.debug("消息已发送: {}", content.length() > 2048 ?
+                            content.substring(0, 2048) + "..." : content);
                 } else {
                     log.warn("WebSocket会话未打开，无法发送消息");
                     reconnect();
