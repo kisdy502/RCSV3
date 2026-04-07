@@ -139,10 +139,10 @@ public class MovementManager {
                 refreshRedisTimeout(commandId);
                 notifyStateChanged(ctx, nodeId, "ACCEPTED");
                 break;
-            case "EXECUTING":
-                refreshRedisTimeout(commandId);
-                notifyStateChanged(ctx, nodeId, "EXECUTING");
-                break;
+//            case "EXECUTING":
+//                refreshRedisTimeout(commandId);
+//                notifyStateChanged(ctx, nodeId, "EXECUTING");
+//                break;
             case "SUCCESS":
                 clearRedisTimeout(commandId);
                 if (!ctx.getFuture().isDone()) {
