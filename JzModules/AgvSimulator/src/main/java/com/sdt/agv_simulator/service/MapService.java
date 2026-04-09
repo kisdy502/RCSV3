@@ -28,6 +28,11 @@ public class MapService {
     @Value("${agv.simulator.map.server-url}")
     private String serverUrl;
 
+    /**
+     * -- GETTER --
+     *  获取完整的地图详情信息
+     */
+    @Getter
     private MapDetailInfo mapDetailInfo;
 
     @Getter
@@ -118,13 +123,6 @@ public class MapService {
 
 
     /**
-     * 获取完整的地图详情信息
-     */
-    public MapDetailInfo getMapDetailInfo() {
-        return mapDetailInfo;
-    }
-
-    /**
      * 获取地图基础信息
      */
     public MapMetaData getMapBaseInfo() {
@@ -181,7 +179,7 @@ public class MapService {
                     pathUrl,
                     HttpMethod.GET,
                     null,
-                    new ParameterizedTypeReference<CommonResult<PathResult>>() {
+                    new ParameterizedTypeReference<>() {
                     }
             );
 
